@@ -1,15 +1,17 @@
 import osmnx as ox
 import networkx as nx
-import heapq
 import math
 import matplotlib.pyplot as plt
+import myAlgorithms as ma
+import graph_utils as gu
 
 # --- Load and prepare graph ---
 G = ox.load_graphml('New York City_NY_USA.graphml')
 G = ox.add_edge_speeds(G)
 G = ox.add_edge_travel_times(G)
-G_projected = ox.project_graph(G)
+G_projected = ox.project_graph(G) # Projecting graphs converts graph from (lat/lon) to MultiDiGraph
 
+# --- Print basic stats of projected graph ---
 print(ox.basic_stats(G_projected))
 
 # --- Find nodes using UNPROJECTED graph G (lat/lon) ---
@@ -26,122 +28,26 @@ def euclidean_heuristic(u, v):
     return math.sqrt((x1 - x2)**2 + (y1 - y2)**2)
 
 
-def dijkstra(G, origin, destination, weight='travel_time'):
-    """
-    Dijkstra's shortest path algorithm implemented from scratch.
-    
-    Parameters:
-        G           : projected OSMnx MultiDiGraph
-        origin      : origin node ID
-        destination : destination node ID
-        weight      : edge attribute to minimize ('travel_time', 'length', etc.)
-    
-    Returns:
-        path        : list of node IDs representing the shortest path
-        cost        : total cost of the path (in units of the weight attribute)
-    """
 
-    # --- Step 1: Initialize data structures ---
+my_dijkstra_path, my_dijkstra_path_cost = ma.dijkstra(G_projected, origin_node, dest_node, weight='travel_time')
 
-    # Priority queue: stores (cost, node)
-    # heapq in Python is a min-heap so the lowest cost is always popped first
-    pq = []
-    heapq.heappush(pq, (0, origin))
-
-    # Cost to reach each node (start with infinity for all)
-    costs = {node: math.inf for node in G.nodes()}
-    costs[origin] = 0
-
-    # Track which node we came from to reconstruct the path later
-    previous = {node: None for node in G.nodes()}
-
-    # Track fully visited/settled nodes
-    visited = set()
-
-    # --- Step 2: Main loop ---
-    while pq:
-
-        # Pop the node with the lowest cost so far
-        current_cost, current_node = heapq.heappop(pq)
-
-        # Skip if we already settled this node
-        # (stale entries can exist in the heap from earlier updates)
-        if current_node in visited:
-            continue
-
-        # If we reached the destination we are done
-        if current_node == destination:
-            break
-
-        # Mark as settled
-        visited.add(current_node)
-
-        # --- Step 3: Relax neighbors ---
-        # G[current_node] returns a dict of {neighbor: {edge_key: edge_data}}
-        # since OSMnx uses a MultiDiGraph there can be multiple edges
-        # between the same two nodes so we take the cheapest one
-        for neighbor, edges in G[current_node].items():
-
-            if neighbor in visited:
-                continue
-
-            # Find the minimum weight edge between current_node and neighbor
-            edge_cost = min(
-                edge_data.get(weight, math.inf)
-                for edge_data in edges.values()
-            )
-
-            # Calculate new cost to reach this neighbor via current_node
-            new_cost = current_cost + edge_cost
-
-            # If this is cheaper than what we knew before, update it
-            if new_cost < costs[neighbor]:
-                costs[neighbor] = new_cost
-                previous[neighbor] = current_node
-                heapq.heappush(pq, (new_cost, neighbor))
-
-    # --- Step 4: Reconstruct path by walking backwards from destination ---
-    path = []
-    node = destination
-
-    # If destination was never reached, return empty
-    if costs[destination] == math.inf:
-        print(f"No path found from {origin} to {destination}")
-        return [], math.inf
-
-    while node is not None:
-        path.append(node)
-        node = previous[node]
-
-    path.reverse()  # We built it backwards so flip it
-
-    return path, costs[destination]
-
-
-my_path, my_cost = dijkstra(G_projected, origin_node, dest_node, weight='travel_time')
-
-# --- Run both algorithms ---
-path_dijkstra = nx.shortest_path(G_projected, source=origin_node, target=dest_node,
+# --- Runs both networkx algorithms ---
+networkx_dijksta_path = nx.shortest_path(G_projected, source=origin_node, target=dest_node,
                                   weight='travel_time')
-path_astar    = nx.astar_path(G_projected, source=origin_node, target=dest_node,
+networkx_astar_path    = nx.astar_path(G_projected, source=origin_node, target=dest_node,
                                heuristic=euclidean_heuristic, weight='travel_time')
 
-# --- Calculate total travel time ---
-def path_travel_time(G, path):
-    total = 0
-    for u, v in zip(path[:-1], path[1:]):
-        edge_data = min(G[u][v].values(), key=lambda e: e.get('travel_time', float('inf')))
-        total += edge_data.get('travel_time', 0)
-    return total
 
-dijkstra_time = path_travel_time(G_projected, path_dijkstra)
-astar_time    = path_travel_time(G_projected, path_astar)
-my_path_time  = path_travel_time(G_projected, my_path)
+dijkstra_time = gu.path_travel_time(G_projected, networkx_dijksta_path)
+astar_time    = gu.path_travel_time(G_projected, networkx_astar_path)
+my_dijkstra_path_time  = gu.path_travel_time(G_projected, my_dijkstra_path)
 
-print(f"Dijkstra — {len(path_dijkstra)} nodes, {dijkstra_time/60:.2f} min")
-print(f"A*       — {len(path_astar)} nodes, {astar_time/60:.2f} min")
-print(f"Nodes in my path : {len(my_path)}")
-print(f"My Path Travel time   : {my_cost:.1f} seconds ({my_cost/60:.2f} min)")
+
+# Prints some basic data about the paths created
+print(f"Dijkstra — {len(networkx_dijksta_path)} nodes, {dijkstra_time/60:.2f} min")
+print(f"A*       — {len(networkx_astar_path)} nodes, {astar_time/60:.2f} min")
+print(f"Nodes in my path : {len(my_dijkstra_path)}")
+print(f"My Path Travel time   : {my_dijkstra_path_cost:.1f} seconds ({my_dijkstra_path_cost/60:.2f} min)")
 
 
 # --- Get bounding box directly from the route plot axis limits ---
@@ -149,7 +55,7 @@ fig, axes = plt.subplots(1, 3, figsize=(16, 8), facecolor='black')
 
 # Plot your custom Dijkstra result
 ox.plot_graph_route(
-    G_projected, my_path,
+    G_projected, my_dijkstra_path,
     route_color='lime',
     route_linewidth=3,
     node_size=0,
@@ -158,11 +64,11 @@ ox.plot_graph_route(
     show=False,
     close=False
 )
-axes[0].set_title(f"My Dijkstra ({my_cost/60:.2f} min)", color='white', fontsize=13)
+axes[0].set_title(f"My Dijkstra ({my_dijkstra_path_cost/60:.2f} min)", color='white', fontsize=13)
 
 # Plot Dijkstra first to get natural zoom limits
 ox.plot_graph_route(
-    G_projected, path_dijkstra,
+    G_projected, networkx_dijksta_path,
     route_color='cyan',
     route_linewidth=3,
     node_size=0,
@@ -179,7 +85,7 @@ ylim = axes[1].get_ylim()
 
 # Plot A*
 ox.plot_graph_route(
-    G_projected, path_astar,
+    G_projected, networkx_astar_path,
     route_color='orange',
     route_linewidth=3,
     node_size=0,
