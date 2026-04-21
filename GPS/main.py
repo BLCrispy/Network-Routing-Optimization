@@ -475,8 +475,9 @@ class PiGPSApp:
                 self.root.after(0, _apply)
 
             except Exception as e:
-                logger.exception("Routing error")
-                self.root.after(0, lambda: self._set_status(f"Error: {e}", "error"))
+                err_msg = str(e)
+                logger.exception(f"Routing error: {err_msg}")
+                self.root.after(0, lambda m=err_msg: self._set_status(f"Error: {m}", "error"))
             finally:
                 self._routing_active = False
                 self.root.after(0, lambda: self._btn_route.config(
