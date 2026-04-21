@@ -349,14 +349,19 @@ class PiGPSApp:
     # ─────────────────────────────────────────────────────────────────────────
 
     def _load_map_around_gps(self):
-        lat, lon = self.gps.position
-        if lat is None:
-            self._set_status("No GPS fix yet — cannot load map.", "error")
+        # Prevent multiple simultaneous load attempts
+        if self._graph_loaded or getattr(self, "_map_loading", False):
             return
 
-        self._set_status("Downloading map data…", "info")
-        self._loading_lbl.config(text="Fetching map…")
-        self._graph_loaded = False
+        self._map_loading = True
+        lat, lon = self.gps.position
+
+        # Use simulation coords if no GPS fix yet
+        if lat is None:
+            lat, lon = 36.1628, -85.5016
+
+        self._set_status("Loading map from file…", "info")
+        self._loading_lbl.config(text="Loading map…")
 
         self.loader.load(
             lat, lon,
@@ -367,6 +372,7 @@ class PiGPSApp:
 
     def _on_graph_loaded(self, G):
         self._graph_loaded = True
+        self._map_loading = False
         self.viewport.fit_graph(G)
         # Centre on GPS
         lat, lon = self.gps.position
@@ -380,6 +386,7 @@ class PiGPSApp:
         )
 
     def _on_graph_error(self, msg):
+        self._map_loading = False
         self._loading_lbl.config(text="")
         self._set_status(f"Map error: {msg}", "error")
 
