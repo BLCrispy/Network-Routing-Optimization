@@ -17,7 +17,7 @@ NETWORK_TYPE    = "walk"        # 'drive' | 'walk' | 'bike'
 # Set this to the path of your pre-downloaded GraphML file.
 # The app will load this instead of downloading from OSM.
 PRELOADED_GRAPH = os.path.expanduser(
-    "~/Network-Routing-Optimization/GraphML_Archive/cookeville.graphml"
+    "/home/gps_pi/Network-Routing-Optimization/GraphML_Archive/cookeville.graphml"
 )
 
 
