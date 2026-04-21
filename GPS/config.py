@@ -10,8 +10,16 @@ GPS_TIMEOUT     = 1              # seconds
 # ── OSMnx / Map Settings ─────────────────────────────────────────────────────
 CACHE_DIR       = os.path.expanduser("~/.pigps_cache")
 GRAPH_CACHE     = os.path.join(CACHE_DIR, "graph_cache.graphml")
-GRAPH_RADIUS_M  = 3000           # metres around current location to download
+GRAPH_RADIUS_M  = 1000           # metres around current location to download
 NETWORK_TYPE    = "walk"        # 'drive' | 'walk' | 'bike'
+
+# ── Pre-downloaded GraphML ────────────────────────────────────────────────────
+# Set this to the path of your pre-downloaded GraphML file.
+# The app will load this instead of downloading from OSM.
+PRELOADED_GRAPH = os.path.expanduser(
+    "~/Network-Routing-Optimization/GraphML_Archive/cookeville.graphml"
+)
+
 
 # ── UI Settings ──────────────────────────────────────────────────────────────
 WINDOW_TITLE    = "PiGPS Navigator"

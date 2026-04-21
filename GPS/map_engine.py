@@ -125,17 +125,27 @@ class GraphLoader:
         """Download/load graph in background thread."""
         def _worker():
             try:
-                logger.info(f"Loading graph around ({lat:.4f}, {lon:.4f}) r={radius_m}m")
-                if not OSMNX_OK:
-                    raise RuntimeError("OSMnx not installed")
-                G = ox.graph_from_point(
-                    (lat, lon),
-                    dist=radius_m,
-                    network_type=NETWORK_TYPE,
-                    simplify=True,
-                )
-                G = ox.add_edge_speeds(G)
-                G = ox.add_edge_travel_times(G)
+                from config import PRELOADED_GRAPH
+                import os
+
+                if PRELOADED_GRAPH and os.path.exists(PRELOADED_GRAPH):
+                    # ── Load from pre-downloaded GraphML ──────────────────────
+                    logger.info(f"Loading pre-downloaded graph from {PRELOADED_GRAPH}")
+                    if not OSMNX_OK:
+                        raise RuntimeError("OSMnx not installed")
+                    G = ox.load_graphml(PRELOADED_GRAPH)
+                else:
+                    # ── Fall back to live download ─────────────────────────────
+                    logger.info(f"Downloading graph around ({lat:.4f}, {lon:.4f}) r={radius_m}m")
+                    if not OSMNX_OK:
+                        raise RuntimeError("OSMnx not installed")
+                    G = ox.graph_from_point(
+                        (lat, lon),
+                        dist=radius_m,
+                        network_type=NETWORK_TYPE,
+                        simplify=True,
+                    )
+
                 with self._lock:
                     self.G = G
                     self._center = (lat, lon)
@@ -146,9 +156,6 @@ class GraphLoader:
                 logger.error(f"Graph load failed: {e}")
                 if on_error:
                     on_error(str(e))
-
-        t = threading.Thread(target=_worker, daemon=True)
-        t.start()
 
     def nearest_node(self, lat: float, lon: float) -> Optional[int]:
         with self._lock:
