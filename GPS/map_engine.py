@@ -125,8 +125,9 @@ class GraphLoader:
         """Download/load graph in background thread."""
         def _worker():
             try:
+                import sys, os
+                sys.path.insert(0, '/home/gps_pi/Network-Routing-Optimization/GPS')
                 from config import PRELOADED_GRAPH
-                import os
 
                 if PRELOADED_GRAPH and os.path.exists(PRELOADED_GRAPH):
                     # ── Load from pre-downloaded pickle ──────────────────────
