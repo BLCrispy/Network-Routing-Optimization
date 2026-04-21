@@ -3,7 +3,7 @@
 import os
 
 # ── GPS Serial Settings ──────────────────────────────────────────────────────
-GPS_PORT        = "/dev/ttyS0"   # Pi Zero 2W UART; change to /dev/ttyAMA0 if needed
+GPS_PORT        = "/dev/ttyAMA0"   # Pi Zero 2W UART; change to /dev/ttyAMA0 if needed
 GPS_BAUD        = 9600
 GPS_TIMEOUT     = 1              # seconds
 
