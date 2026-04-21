@@ -314,6 +314,9 @@ class PiGPSApp:
             # Auto-load map on first fix
             if not self._graph_loaded:
                 self._load_map_around_gps()
+            # Update subgraph as user moves (fast — no download)
+            elif self.loader.G_full is not None:
+                self.loader.update_subgraph(lat, lon)
 
             # Check reroute
             if self.route_nodes and self._last_reroute_pos:
@@ -372,17 +375,22 @@ class PiGPSApp:
 
     def _on_graph_loaded(self, G):
         self._graph_loaded = True
-        self._map_loading = False
-        self.viewport.fit_graph(G)
-        # Centre on GPS
+        self._map_loading  = False
+
+        # Extract initial subgraph around GPS position
         lat, lon = self.gps.position
-        if lat:
-            self.viewport.center_lat = lat
-            self.viewport.center_lon = lon
+        if lat is None:
+            lat, lon = 36.1763, -85.4831
+
+        self.loader.update_subgraph(lat, lon)
+
+        self.viewport.fit_graph(self.loader.G or G)
+        self.viewport.center_lat = lat
+        self.viewport.center_lon = lon
+
         self._loading_lbl.config(text="")
         self._set_status(
-            f"Map loaded: {G.number_of_nodes()} nodes, {G.number_of_edges()} edges",
-            "ok"
+            f"Map loaded: {G.number_of_nodes()} nodes total", "ok"
         )
 
     def _on_graph_error(self, msg):
@@ -427,8 +435,8 @@ class PiGPSApp:
                     return
 
                 d_lat, d_lon = dest_ll
-                orig_node = self.loader.nearest_node(lat, lon)
-                dest_node = self.loader.nearest_node(d_lat, d_lon)
+                orig_node = self.loader.nearest_node(lat, lon, use_full=True)
+                dest_node = self.loader.nearest_node(d_lat, d_lon, use_full=True)
 
                 if orig_node is None or dest_node is None:
                     self.root.after(0, lambda: self._set_status(
@@ -439,7 +447,9 @@ class PiGPSApp:
                     f"Running {algo}…", "info"))
 
                 t0    = time.time()
-                path  = find_path(self.loader.G, orig_node, dest_node, algorithm=algo)
+                # Route on full graph for complete city coverage
+                route_graph = self.loader.G_full or self.loader.G
+                path = find_path(route_graph, orig_node, dest_node, algorithm=algo)
                 t_ms  = (time.time() - t0) * 1000
 
                 if not path:

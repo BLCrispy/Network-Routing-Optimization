@@ -16,7 +16,11 @@ NETWORK_TYPE    = "walk"        # 'drive' | 'walk' | 'bike'
 # ── Pre-downloaded GraphML ────────────────────────────────────────────────────
 # Set this to the path of your pre-downloaded GraphML file.
 # The app will load this instead of downloading from OSM.
-PRELOADED_GRAPH = "/home/gps_pi/Network-Routing-Optimization/GraphML_Archive/cookeville.pkl"
+PRELOADED_GRAPH = "/home/gps_pi/Network-Routing-Optimization/GraphML_Archive/cookeville_full.pkl"
+
+# Subgraph viewport settings
+SUBGRAPH_RADIUS_M = 1500   # metres around user to extract for rendering
+ROUTING_RADIUS_M  = 5000   # metres around user to extract for routing
 
 
 # ── UI Settings ──────────────────────────────────────────────────────────────

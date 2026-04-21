@@ -18,7 +18,7 @@ except ImportError:
 from config import (
     CACHE_DIR, GRAPH_RADIUS_M, NETWORK_TYPE,
     NODE_CLR, EDGE_CLR, ROUTE_CLR, POSITION_CLR, DEST_CLR,
-    ACCENT, ACCENT2, TEXT_MUTED, PRELOADED_GRAPH
+    ACCENT, ACCENT2, TEXT_MUTED, PRELOADED_GRAPH, SUBGRAPH_RADIUS_M, ROUTING_RADIUS_M
 )
 
 logger = logging.getLogger(__name__)
@@ -81,65 +81,93 @@ class Viewport:
 
 class GraphLoader:
     def __init__(self):
-        self.G: Optional[nx.MultiDiGraph] = None
-        self._lock    = threading.Lock()
-        self._center  = (None, None)
+        self.G: Optional[nx.MultiDiGraph] = None      # active subgraph for display
+        self.G_full: Optional[nx.MultiDiGraph] = None # full city graph (read-only)
+        self._lock   = threading.Lock()
+        self._center = (None, None)
+        self._loading = False
 
         if OSMNX_OK:
             ox.settings.use_cache    = True
             ox.settings.cache_folder = CACHE_DIR
             ox.settings.log_console  = False
 
-    def load(self, lat: float, lon: float,
-             radius_m: int = GRAPH_RADIUS_M,
-             on_done=None, on_error=None):
-
+    def load_full_graph(self, on_done=None, on_error=None):
+        """Load the full city graph from pickle into memory once."""
         def _worker():
             try:
-                print(f"[WORKER] PRELOADED_GRAPH = {PRELOADED_GRAPH}")
-                print(f"[WORKER] exists = {os.path.exists(PRELOADED_GRAPH)}")
-
-                if PRELOADED_GRAPH and os.path.exists(PRELOADED_GRAPH):
-                    print("[WORKER] Loading from pickle...")
-                    with open(PRELOADED_GRAPH, "rb") as f:
-                        G = pickle.load(f)
-                    print(f"[WORKER] Pickle loaded: {G.number_of_nodes()} nodes")
-                else:
-                    print("[WORKER] No preloaded file, downloading...")
-                    if not OSMNX_OK:
-                        raise RuntimeError("OSMnx not installed")
-                    G = ox.graph_from_point(
-                        (lat, lon),
-                        dist=radius_m,
-                        network_type=NETWORK_TYPE,
-                        simplify=True,
-                    )
-
+                print(f"[WORKER] Loading full graph from {PRELOADED_GRAPH}")
+                with open(PRELOADED_GRAPH, "rb") as f:
+                    G_full = pickle.load(f)
+                print(f"[WORKER] Full graph loaded: {G_full.number_of_nodes()} nodes")
                 with self._lock:
-                    self.G = G
-                    self._center = (lat, lon)
-
-                logger.info(f"Graph loaded: {G.number_of_nodes()} nodes, {G.number_of_edges()} edges")
+                    self.G_full = G_full
                 if on_done:
-                    on_done(G)
-
+                    on_done(G_full)
             except Exception as e:
                 import traceback
                 traceback.print_exc()
-                logger.error(f"Graph load failed: {e}")
+                logger.error(f"Full graph load failed: {e}")
                 if on_error:
                     on_error(str(e))
 
-        print("[LOADER] Spawning worker thread...")
+        print("[LOADER] Loading full graph...")
         t = threading.Thread(target=_worker, daemon=True)
         t.start()
-        print(f"[LOADER] Thread started: {t.name}")
 
-    def nearest_node(self, lat: float, lon: float) -> Optional[int]:
+    def extract_subgraph(self, lat: float, lon: float,
+                          radius_m: int = SUBGRAPH_RADIUS_M) -> Optional[nx.MultiDiGraph]:
+        """
+        Extract a lightweight subgraph around a point from the full graph.
+        This is fast — pure in-memory node filtering, no download.
+        """
         with self._lock:
-            if self.G is None or not OSMNX_OK:
+            if self.G_full is None:
                 return None
-            return ox.nearest_nodes(self.G, lon, lat)
+            G_full = self.G_full
+
+        # Find all nodes within radius_m metres
+        R = 6_371_000
+        nodes_in_radius = []
+        for node, data in G_full.nodes(data=True):
+            node_lat = data["y"]
+            node_lon = data["x"]
+            dlat = math.radians(node_lat - lat)
+            dlon = math.radians(node_lon - lon)
+            a = (math.sin(dlat/2)**2 +
+                 math.cos(math.radians(lat)) *
+                 math.cos(math.radians(node_lat)) *
+                 math.sin(dlon/2)**2)
+            dist = R * 2 * math.asin(math.sqrt(a))
+            if dist <= radius_m:
+                nodes_in_radius.append(node)
+
+        if not nodes_in_radius:
+            return None
+
+        subgraph = G_full.subgraph(nodes_in_radius).copy()
+        return subgraph
+
+    def update_subgraph(self, lat: float, lon: float):
+        """Update the active display subgraph around current position."""
+        sub = self.extract_subgraph(lat, lon, SUBGRAPH_RADIUS_M)
+        if sub:
+            with self._lock:
+                self.G = sub
+                self._center = (lat, lon)
+
+    def get_routing_graph(self, lat: float, lon: float) -> Optional[nx.MultiDiGraph]:
+        """Get a larger subgraph suitable for routing calculations."""
+        return self.extract_subgraph(lat, lon, ROUTING_RADIUS_M)
+
+    def nearest_node(self, lat: float, lon: float,
+                     use_full: bool = True) -> Optional[int]:
+        """Find nearest node — uses full graph for accuracy."""
+        with self._lock:
+            G = self.G_full if use_full else self.G
+            if G is None or not OSMNX_OK:
+                return None
+            return ox.nearest_nodes(G, lon, lat)
 
     def geocode(self, address: str) -> Optional[Tuple[float, float]]:
         if not OSMNX_OK:
@@ -149,6 +177,12 @@ class GraphLoader:
         except Exception as e:
             logger.error(f"Geocode failed for '{address}': {e}")
             return None
+
+    # Keep load() as an alias so main.py doesn't break
+    def load(self, lat: float, lon: float,
+             radius_m: int = SUBGRAPH_RADIUS_M,
+             on_done=None, on_error=None):
+        self.load_full_graph(on_done=on_done, on_error=on_error)
 
 
 class MapRenderer:
