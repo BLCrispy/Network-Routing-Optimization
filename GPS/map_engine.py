@@ -129,11 +129,16 @@ class GraphLoader:
                 import os
 
                 if PRELOADED_GRAPH and os.path.exists(PRELOADED_GRAPH):
-                    # ── Load from pre-downloaded GraphML ──────────────────────
+                    # ── Load from pre-downloaded pickle ──────────────────────
                     logger.info(f"Loading pre-downloaded graph from {PRELOADED_GRAPH}")
-                    if not OSMNX_OK:
-                        raise RuntimeError("OSMnx not installed")
-                    G = ox.load_graphml(PRELOADED_GRAPH)
+                    if PRELOADED_GRAPH.endswith(".pkl"):
+                        import pickle
+                        with open(PRELOADED_GRAPH, "rb") as f:
+                            G = pickle.load(f)
+                    else:
+                        if not OSMNX_OK:
+                            raise RuntimeError("OSMnx not installed")
+                        G = ox.load_graphml(PRELOADED_GRAPH)
                 else:
                     # ── Fall back to live download ─────────────────────────────
                     logger.info(f"Downloading graph around ({lat:.4f}, {lon:.4f}) r={radius_m}m")

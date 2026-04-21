@@ -16,7 +16,7 @@ NETWORK_TYPE    = "walk"        # 'drive' | 'walk' | 'bike'
 # ── Pre-downloaded GraphML ────────────────────────────────────────────────────
 # Set this to the path of your pre-downloaded GraphML file.
 # The app will load this instead of downloading from OSM.
-PRELOADED_GRAPH = "/home/gps_pi/Network-Routing-Optimization/GraphML_Archive/cookeville.graphml"
+PRELOADED_GRAPH = "/home/gps_pi/Network-Routing-Optimization/GraphML_Archive/cookeville.pkl"
 
 
 # ── UI Settings ──────────────────────────────────────────────────────────────
