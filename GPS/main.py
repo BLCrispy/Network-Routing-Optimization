@@ -101,178 +101,182 @@ class PiGPSApp:
         sidebar = tk.Frame(self.root, bg=BG_MID, width=SIDEBAR_W)
         sidebar.place(x=MAP_PANEL_W, y=0, width=SIDEBAR_W, height=WINDOW_H)
 
-        y = 14
+        y = 6
 
         # Title
         tk.Label(
-            sidebar, text="PiGPS", font=("Courier", 20, "bold"),
+            sidebar, text="PiGPS Navigator",
+            font=("Courier", 11, "bold"),
             fg=ACCENT, bg=BG_MID,
-        ).place(x=14, y=y)
-        tk.Label(
-            sidebar, text="Navigator", font=("Courier", 10),
-            fg=TEXT_MUTED, bg=BG_MID,
-        ).place(x=14, y=y + 26)
+        ).place(x=8, y=y)
 
-        y += 60
+        y += 20
 
         # ── GPS Status box ────────────────────────────────────────────────
         self._gps_frame = tk.Frame(sidebar, bg=BG_LIGHT, bd=0)
-        self._gps_frame.place(x=10, y=y, width=SIDEBAR_W - 20, height=76)
+        self._gps_frame.place(x=6, y=y, width=SIDEBAR_W - 12, height=56)
 
         self._lbl_fix = tk.Label(
-            self._gps_frame, text="NO FIX", font=("Courier", 9, "bold"),
+            self._gps_frame, text="NO FIX", font=("Courier", 8, "bold"),
             fg=DEST_CLR, bg=BG_LIGHT,
         )
-        self._lbl_fix.place(x=8, y=6)
+        self._lbl_fix.place(x=6, y=2)
 
         self._lbl_coords = tk.Label(
             self._gps_frame, text="---.----  ---.----",
-            font=("Courier", 8), fg=TEXT_MUTED, bg=BG_LIGHT,
+            font=("Courier", 7), fg=TEXT_MUTED, bg=BG_LIGHT,
         )
-        self._lbl_coords.place(x=8, y=24)
+        self._lbl_coords.place(x=6, y=16)
 
         self._lbl_speed = tk.Label(
             self._gps_frame, text="0.0 km/h  |  0 sats",
-            font=("Courier", 8), fg=TEXT_MUTED, bg=BG_LIGHT,
+            font=("Courier", 7), fg=TEXT_MUTED, bg=BG_LIGHT,
         )
-        self._lbl_speed.place(x=8, y=42)
+        self._lbl_speed.place(x=6, y=30)
 
         self._lbl_heading = tk.Label(
             self._gps_frame, text="Heading: ---°",
-            font=("Courier", 8), fg=TEXT_MUTED, bg=BG_LIGHT,
+            font=("Courier", 7), fg=TEXT_MUTED, bg=BG_LIGHT,
         )
-        self._lbl_heading.place(x=8, y=58)
+        self._lbl_heading.place(x=6, y=44)
 
-        y += 88
+        y += 62
 
         # ── Algorithm selector ────────────────────────────────────────────
         tk.Label(
-            sidebar, text="ALGORITHM", font=("Courier", 8, "bold"),
+            sidebar, text="ALGORITHM", font=("Courier", 7, "bold"),
             fg=TEXT_MUTED, bg=BG_MID,
-        ).place(x=14, y=y)
-        y += 18
+        ).place(x=6, y=y)
+        y += 14
 
         self._algo_var = tk.StringVar(value=DEFAULT_ALGO)
-        for algo in ALGORITHMS:
+        algo_frame = tk.Frame(sidebar, bg=BG_MID)
+        algo_frame.place(x=6, y=y, width=SIDEBAR_W - 12, height=36)
+        for i, algo in enumerate(ALGORITHMS):
             rb = tk.Radiobutton(
-                sidebar, text=algo, variable=self._algo_var,
+                algo_frame, text=algo, variable=self._algo_var,
                 value=algo,
-                font=("Courier", 9), fg=TEXT_PRIMARY, bg=BG_MID,
+                font=("Courier", 7), fg=TEXT_PRIMARY, bg=BG_MID,
                 selectcolor=BG_LIGHT, activebackground=BG_MID,
                 activeforeground=ACCENT,
             )
-            rb.place(x=14, y=y)
-            y += 20
+            rb.grid(row=i//2, column=i%2, sticky="w", padx=2, pady=0)
 
-        y += 10
+        y += 42
 
         # ── Destination input ──────────────────────────────────────────────
         tk.Label(
-            sidebar, text="DESTINATION", font=("Courier", 8, "bold"),
+            sidebar, text="DESTINATION", font=("Courier", 7, "bold"),
             fg=TEXT_MUTED, bg=BG_MID,
-        ).place(x=14, y=y)
-        y += 18
+        ).place(x=6, y=y)
+        y += 14
 
         self._dest_entry = tk.Entry(
-            sidebar, font=("Courier", 9),
+            sidebar, font=("Courier", 8),
             bg=BG_LIGHT, fg=TEXT_PRIMARY, insertbackground=ACCENT,
             bd=0, highlightthickness=1, highlightcolor=ACCENT,
             highlightbackground=BG_LIGHT,
         )
-        self._dest_entry.place(x=10, y=y, width=SIDEBAR_W - 20, height=28)
+        self._dest_entry.place(x=6, y=y, width=SIDEBAR_W - 32, height=24)
         self._dest_entry.bind("<Return>", lambda e: self._do_route())
-        y += 34
+        self._dest_entry.bind("<FocusIn>", self._show_keyboard)
 
-        # Load Map button
+        tk.Button(
+            sidebar, text="⌨",
+            font=("Courier", 10),
+            fg=TEXT_PRIMARY, bg=BG_LIGHT,
+            activebackground=BG_DARK,
+            bd=0, cursor="hand2",
+            command=self._show_keyboard,
+        ).place(x=SIDEBAR_W - 26, y=y, width=22, height=24)
+        y += 28
+
         btn_load = tk.Button(
-            sidebar, text="⬇  Load Map",
-            font=("Courier", 9, "bold"),
+            sidebar, text="⬇ Load Map",
+            font=("Courier", 8, "bold"),
             fg=BG_DARK, bg=ACCENT, activebackground=ACCENT2,
-            bd=0, padx=4, pady=4, cursor="hand2",
+            bd=0, cursor="hand2",
             command=self._load_map_around_gps,
         )
-        btn_load.place(x=10, y=y, width=SIDEBAR_W - 20, height=32)
-        y += 38
+        btn_load.place(x=6, y=y, width=SIDEBAR_W - 12, height=26)
+        y += 30
 
-        # Route button
         self._btn_route = tk.Button(
-            sidebar, text="▶  Calculate Route",
-            font=("Courier", 9, "bold"),
+            sidebar, text="▶ Calculate Route",
+            font=("Courier", 8, "bold"),
             fg=BG_DARK, bg=ACCENT2, activebackground=ACCENT,
-            bd=0, padx=4, pady=4, cursor="hand2",
+            bd=0, cursor="hand2",
             command=self._do_route,
         )
-        self._btn_route.place(x=10, y=y, width=SIDEBAR_W - 20, height=32)
-        y += 38
+        self._btn_route.place(x=6, y=y, width=SIDEBAR_W - 12, height=26)
+        y += 30
 
-        # Clear route button
         btn_clr = tk.Button(
-            sidebar, text="✕  Clear Route",
-            font=("Courier", 9),
+            sidebar, text="✕ Clear Route",
+            font=("Courier", 8),
             fg=TEXT_MUTED, bg=BG_LIGHT, activebackground=BG_DARK,
-            bd=0, padx=4, pady=4, cursor="hand2",
+            bd=0, cursor="hand2",
             command=self._clear_route,
         )
-        btn_clr.place(x=10, y=y, width=SIDEBAR_W - 20, height=28)
-        y += 36
+        btn_clr.place(x=6, y=y, width=SIDEBAR_W - 12, height=24)
+        y += 28
 
         # ── Route info box ────────────────────────────────────────────────
         self._info_frame = tk.Frame(sidebar, bg=BG_LIGHT)
-        self._info_frame.place(x=10, y=y, width=SIDEBAR_W - 20, height=64)
+        self._info_frame.place(x=6, y=y, width=SIDEBAR_W - 12, height=48)
 
         self._lbl_dist = tk.Label(
             self._info_frame, text="Distance: --",
-            font=("Courier", 9), fg=ACCENT2, bg=BG_LIGHT,
+            font=("Courier", 8), fg=ACCENT2, bg=BG_LIGHT,
         )
-        self._lbl_dist.place(x=8, y=6)
+        self._lbl_dist.place(x=6, y=2)
 
         self._lbl_eta = tk.Label(
             self._info_frame, text="ETA: --",
-            font=("Courier", 9), fg=ACCENT2, bg=BG_LIGHT,
+            font=("Courier", 8), fg=ACCENT2, bg=BG_LIGHT,
         )
-        self._lbl_eta.place(x=8, y=24)
+        self._lbl_eta.place(x=6, y=18)
 
         self._lbl_algo_used = tk.Label(
             self._info_frame, text="Algorithm: --",
-            font=("Courier", 8), fg=TEXT_MUTED, bg=BG_LIGHT,
+            font=("Courier", 7), fg=TEXT_MUTED, bg=BG_LIGHT,
         )
-        self._lbl_algo_used.place(x=8, y=44)
+        self._lbl_algo_used.place(x=6, y=34)
 
-        y += 72
+        y += 54
 
         # ── Zoom buttons ──────────────────────────────────────────────────
         zf = tk.Frame(sidebar, bg=BG_MID)
-        zf.place(x=10, y=y, width=SIDEBAR_W - 20, height=34)
+        zf.place(x=6, y=y, width=SIDEBAR_W - 12, height=26)
 
-        for txt, fn, side in [("  +  ", self.viewport.zoom_in, "left"),
-                               ("  −  ", self.viewport.zoom_out, "right")]:
+        for txt, fn in [(" + ", self.viewport.zoom_in),
+                        (" − ", self.viewport.zoom_out)]:
             tk.Button(
-                zf, text=txt, font=("Courier", 12, "bold"),
+                zf, text=txt, font=("Courier", 10, "bold"),
                 fg=TEXT_PRIMARY, bg=BG_LIGHT, activebackground=BG_DARK,
                 bd=0, cursor="hand2", command=fn,
-            ).pack(side=side, expand=True, fill="both", padx=2)
+            ).pack(side="left", expand=True, fill="both", padx=2)
 
-        y += 42
+        y += 30
 
-        # Center-on-GPS button
         tk.Button(
-            sidebar, text="⊙  Re-centre",
-            font=("Courier", 9),
+            sidebar, text="⊙ Re-centre",
+            font=("Courier", 8),
             fg=TEXT_PRIMARY, bg=BG_LIGHT, activebackground=BG_DARK,
             bd=0, cursor="hand2",
             command=self._centre_on_gps,
-        ).place(x=10, y=y, width=SIDEBAR_W - 20, height=28)
+        ).place(x=6, y=y, width=SIDEBAR_W - 12, height=24)
 
-        y += 38
+        y += 28
 
         # ── Status bar ────────────────────────────────────────────────────
         self._status_var = tk.StringVar(value="Starting…")
         self._status_lbl = tk.Label(
             sidebar, textvariable=self._status_var,
-            font=("Courier", 8), fg=ACCENT, bg=BG_MID,
-            wraplength=SIDEBAR_W - 20, justify="left",
+            font=("Courier", 7), fg=ACCENT, bg=BG_MID,
+            wraplength=SIDEBAR_W - 12, justify="left",
         )
-        self._status_lbl.place(x=10, y=WINDOW_H - 40, width=SIDEBAR_W - 20)
+        self._status_lbl.place(x=6, y=y, width=SIDEBAR_W - 12)
 
         # ── Overlay on canvas ─────────────────────────────────────────────
         # Scale bar
@@ -337,6 +341,16 @@ class PiGPSApp:
     def _map_refresh(self):
         lat, lon = self.gps.position
         pos = (lat, lon) if (lat and lon) else None
+
+        # Auto-centre on GPS unless user is manually panning
+        if pos and not getattr(self, "_user_panning", False):
+            self.viewport.center_lat = lat
+            self.viewport.center_lon = lon
+
+        # Auto-resume following after 10 seconds of no panning
+        if getattr(self, "_user_panning", False):
+            if time.time() - getattr(self, "_pan_time", 0) > 10:
+                self._user_panning = False
 
         self.renderer.render(
             G           = self.loader.G,
@@ -525,6 +539,8 @@ class PiGPSApp:
     def _pan_start(self, event):
         self._pan_start_xy = (event.x, event.y)
         self._pan_start_ll = (self.viewport.center_lat, self.viewport.center_lon)
+        self._user_panning = True
+        self._pan_time     = time.time()
 
     def _pan_drag(self, event):
         if not hasattr(self, "_pan_start_xy"):
@@ -562,6 +578,7 @@ class PiGPSApp:
         if lat:
             self.viewport.center_lat = lat
             self.viewport.center_lon = lon
+        self._user_panning = False
 
     # ─────────────────────────────────────────────────────────────────────────
     # Helpers
@@ -592,6 +609,21 @@ class PiGPSApp:
         dlat, dlon = lat2 - lat1, lon2 - lon1
         a = math.sin(dlat/2)**2 + math.cos(lat1)*math.cos(lat2)*math.sin(dlon/2)**2
         return R * 2 * math.asin(math.sqrt(a))
+
+    def _show_keyboard(self, event=None):
+        """Toggle matchbox on-screen keyboard."""
+        import subprocess
+        try:
+            result = subprocess.run(
+                ["pgrep", "-x", "matchbox-keyboard"],
+                capture_output=True
+            )
+            if result.returncode == 0:
+                subprocess.Popen(["pkill", "matchbox-keyboard"])
+            else:
+                subprocess.Popen(["matchbox-keyboard"])
+        except Exception as e:
+            logger.warning(f"Keyboard toggle failed: {e}")
 
     def _on_close(self):
         self.gps.stop()
