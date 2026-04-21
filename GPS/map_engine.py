@@ -159,6 +159,8 @@ class GraphLoader:
                 if on_done:
                     on_done(G)
             except Exception as e:
+                import traceback
+                traceback.print_exc()
                 logger.error(f"Graph load failed: {e}")
                 if on_error:
                     on_error(str(e))
