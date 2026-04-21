@@ -1,0 +1,18 @@
+# PiGPS Navigator — Setup & Requirements
+# =========================================
+# Python 3.9+  |  Raspberry Pi Zero 2W  |  Pi OS 32-bit (armv7l)
+#
+# Install dependencies (run on the Pi):
+#
+#   pip install pyserial pynmea2 --break-system-packages
+#
+# OSMnx should already be installed. If not:
+#   pip install osmnx --break-system-packages
+#
+# Tkinter is bundled with Pi OS. If missing:
+#   sudo apt install python3-tk
+
+pyserial>=3.5
+pynmea2>=1.19
+osmnx>=1.9
+networkx>=3.0
