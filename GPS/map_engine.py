@@ -17,7 +17,7 @@ except ImportError:
 from config import (
     CACHE_DIR, GRAPH_CACHE, GRAPH_RADIUS_M, NETWORK_TYPE,
     NODE_CLR, EDGE_CLR, ROUTE_CLR, POSITION_CLR, DEST_CLR,
-    ACCENT, ACCENT2, TEXT_MUTED
+    ACCENT, ACCENT2, TEXT_MUTED, PRELOADED_GRAPH
 )
 
 logger = logging.getLogger(__name__)
@@ -125,9 +125,7 @@ class GraphLoader:
         """Download/load graph in background thread."""
         def _worker():
             try:
-                import sys, os
                 sys.path.insert(0, '/home/gps_pi/Network-Routing-Optimization/GPS')
-                from config import PRELOADED_GRAPH
 
                 if PRELOADED_GRAPH and os.path.exists(PRELOADED_GRAPH):
                     # ── Load from pre-downloaded pickle ──────────────────────
