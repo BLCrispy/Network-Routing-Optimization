@@ -221,7 +221,7 @@ class MapRenderer:
 
     def _draw_position(self, lat, lon):
         cx, cy = self.vp.geo_to_canvas(lat, lon)
-        for r, color in [(18, "#0d1117"), (14, ACCENT + "80"), (9, ACCENT)]:
+        for r, color in [(18, "#0d1117"), (14, "#1a6b29"), (9, ACCENT)]:
             self.canvas.create_oval(cx-r, cy-r, cx+r, cy+r,
                 fill=color, outline=ACCENT, width=2, tags=self._tag)
         self.canvas.create_text(cx, cy, text="◉",
