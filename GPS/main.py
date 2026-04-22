@@ -33,6 +33,127 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+class OSKKeyboard(tk.Toplevel):
+    """
+    On-screen keyboard that types into a target Entry widget.
+    Supports letters, numbers, symbols, backspace, clear, and close.
+    """
+
+    ROWS = [
+        ["1","2","3","4","5","6","7","8","9","0","⌫"],
+        ["q","w","e","r","t","y","u","i","o","p"],
+        ["a","s","d","f","g","h","j","k","l","'"],
+        ["z","x","c","v","b","n","m",",","."," ⎵ "],
+        ["@","#","-","_","(",")","/","\\","!","?"],
+    ]
+
+    def __init__(self, parent, target_entry: tk.Entry):
+        super().__init__(parent)
+        self.target = target_entry
+        self.caps   = False
+
+        self.overrideredirect(True)   # no window border
+        self.attributes("-topmost", True)
+        self.configure(bg="#161b22")
+
+        self._build()
+        self._position()
+
+    def _build(self):
+        for r, row in enumerate(self.ROWS):
+            for c, key in enumerate(row):
+                display = key.strip()
+                w = 2 if key == " ⎵ " else 1
+                btn = tk.Button(
+                    self,
+                    text=display,
+                    font=("Courier", 11, "bold"),
+                    fg="#e6edf3",
+                    bg="#21262d",
+                    activebackground="#39d353",
+                    activeforeground="#0d1117",
+                    relief="flat",
+                    bd=1,
+                    width=3 if key != " ⎵ " else 6,
+                    height=1,
+                    command=lambda k=key: self._press(k),
+                )
+                btn.grid(
+                    row=r, column=c,
+                    columnspan=w,
+                    padx=2, pady=2,
+                    sticky="nsew",
+                )
+
+        # Bottom row — Caps, Space, Close
+        bottom = tk.Frame(self, bg="#161b22")
+        bottom.grid(
+            row=len(self.ROWS), column=0,
+            columnspan=11, sticky="ew",
+            padx=2, pady=2,
+        )
+
+        self._caps_btn = tk.Button(
+            bottom, text="CAPS",
+            font=("Courier", 10, "bold"),
+            fg="#e6edf3", bg="#21262d",
+            activebackground="#58a6ff",
+            relief="flat", bd=1, width=6, height=1,
+            command=self._toggle_caps,
+        )
+        self._caps_btn.pack(side="left", padx=2)
+
+        tk.Button(
+            bottom, text="SPACE",
+            font=("Courier", 10, "bold"),
+            fg="#e6edf3", bg="#21262d",
+            activebackground="#39d353",
+            activeforeground="#0d1117",
+            relief="flat", bd=1, width=16, height=1,
+            command=lambda: self._press(" "),
+        ).pack(side="left", padx=2, expand=True, fill="x")
+
+        tk.Button(
+            bottom, text="✕ CLOSE",
+            font=("Courier", 10, "bold"),
+            fg="#e6edf3", bg="#f85149",
+            activebackground="#da3633",
+            relief="flat", bd=1, width=8, height=1,
+            command=self.destroy,
+        ).pack(side="right", padx=2)
+
+    def _press(self, key: str):
+        key = key.strip()
+        if key == "⌫":
+            cur = self.target.get()
+            self.target.delete(0, tk.END)
+            self.target.insert(0, cur[:-1])
+        elif key == "⎵":
+            self.target.insert(tk.END, " ")
+        else:
+            ch = key.upper() if self.caps else key
+            self.target.insert(tk.END, ch)
+
+    def _toggle_caps(self):
+        self.caps = not self.caps
+        self._caps_btn.config(
+            bg="#58a6ff" if self.caps else "#21262d",
+            fg="#0d1117" if self.caps else "#e6edf3",
+        )
+
+    def _position(self):
+        self.update_idletasks()
+        sw = self.winfo_screenwidth()
+        sh = self.winfo_screenheight()
+        kw = self.winfo_reqwidth()
+        kh = self.winfo_reqheight()
+        # Place at bottom of screen centred horizontally
+        x = (sw - kw) // 2
+        y = sh - kh - 10
+        self.geometry(f"+{x}+{y}")
+
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Main Application
 # ─────────────────────────────────────────────────────────────────────────────
@@ -611,19 +732,13 @@ class PiGPSApp:
         return R * 2 * math.asin(math.sqrt(a))
 
     def _show_keyboard(self, event=None):
-        """Toggle matchbox on-screen keyboard."""
-        import subprocess
-        try:
-            result = subprocess.run(
-                ["pgrep", "-x", "matchbox-keyboard"],
-                capture_output=True
-            )
-            if result.returncode == 0:
-                subprocess.Popen(["pkill", "matchbox-keyboard"])
-            else:
-                subprocess.Popen(["matchbox-keyboard"])
-        except Exception as e:
-            logger.warning(f"Keyboard toggle failed: {e}")
+        """Show custom on-screen keyboard targeting the destination entry."""
+        # If already open, close it
+        for widget in self.root.winfo_children():
+            if isinstance(widget, OSKKeyboard):
+                widget.destroy()
+                return
+        OSKKeyboard(self.root, self._dest_entry)
 
     def _on_close(self):
         self.gps.stop()
