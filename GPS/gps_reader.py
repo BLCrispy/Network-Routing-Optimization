@@ -59,8 +59,14 @@ class GPSReader:
 
     def stop(self):
         self._running = False
-        if self._ser and self._ser.is_open:
-            self._ser.close()
+        time.sleep(0.2)
+        try:
+            if self._ser and self._ser.is_open:
+                self._ser.flush()
+                self._ser.close()
+                self._ser = None
+        except Exception as e:
+            logger.warning(f"GPS port close error: {e}")
 
     @property
     def position(self):
@@ -100,14 +106,23 @@ class GPSReader:
             self._simulate()
             return
 
-        while self._running:
+        try:
+            while self._running:
+                try:
+                    line = self._ser.readline().decode("ascii", errors="replace").strip()
+                    if line.startswith("$"):
+                        self._parse_nmea(line)
+                except Exception as e:
+                    logger.debug(f"GPS read error: {e}")
+                    time.sleep(0.5)
+        finally:
             try:
-                line = self._ser.readline().decode("ascii", errors="replace").strip()
-                if line.startswith("$"):
-                    self._parse_nmea(line)
-            except Exception as e:
-                logger.debug(f"GPS read error: {e}")
-                time.sleep(0.5)
+                if self._ser and self._ser.is_open:
+                    self._ser.close()
+                    self._ser = None
+                    logger.info("GPS serial port closed cleanly")
+            except Exception:
+                pass
 
     def _parse_nmea(self, sentence: str):
         try:

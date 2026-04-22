@@ -110,7 +110,7 @@ class OSKKeyboard(tk.Toplevel):
             activebackground="#39d353",
             activeforeground="#0d1117",
             relief="flat", bd=1, width=16, height=1,
-            command=lambda: self._press(" "),
+            command=lambda: self.target.insert(tk.END, " "),
         ).pack(side="left", padx=2, expand=True, fill="x")
 
         tk.Button(
@@ -123,15 +123,15 @@ class OSKKeyboard(tk.Toplevel):
         ).pack(side="right", padx=2)
 
     def _press(self, key: str):
-        key = key.strip()
-        if key == "⌫":
+        stripped = key.strip()
+        if stripped == "⌫":
             cur = self.target.get()
             self.target.delete(0, tk.END)
             self.target.insert(0, cur[:-1])
-        elif key == "⎵":
+        elif stripped in ("⎵", "") or key == " ":
             self.target.insert(tk.END, " ")
         else:
-            ch = key.upper() if self.caps else key
+            ch = stripped.upper() if self.caps else stripped
             self.target.insert(tk.END, ch)
 
     def _toggle_caps(self):
