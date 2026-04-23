@@ -205,7 +205,7 @@ class PiGPSApp:
     # ─────────────────────────────────────────────────────────────────────────
 
     def _build_ui(self):
-        # ── Map canvas (left) ──────────────────────────────────────────────
+        # ── Map canvas (left) ─────────────────────────────────────────────
         self.canvas = tk.Canvas(
             self.root,
             width=MAP_PANEL_W, height=WINDOW_H,
@@ -214,7 +214,6 @@ class PiGPSApp:
         self.canvas.place(x=0, y=0)
         self.renderer = MapRenderer(self.canvas, self.viewport)
 
-        # Mouse interactions
         self.canvas.bind("<ButtonPress-1>",   self._pan_start)
         self.canvas.bind("<B1-Motion>",       self._pan_drag)
         self.canvas.bind("<ButtonRelease-1>", self._pan_end)
@@ -222,27 +221,27 @@ class PiGPSApp:
         self.canvas.bind("<Button-4>",        lambda e: self._zoom(1))
         self.canvas.bind("<Button-5>",        lambda e: self._zoom(-1))
 
-        # ── Sidebar (right) ────────────────────────────────────────────────
+        # ── Sidebar (right) ───────────────────────────────────────────────
         sidebar = tk.Frame(self.root, bg=BG_MID, width=SIDEBAR_W)
         sidebar.place(x=MAP_PANEL_W, y=0, width=SIDEBAR_W, height=WINDOW_H)
 
         y = 6
 
-        # Title
+        # ── Title ─────────────────────────────────────────────────────────
         tk.Label(
             sidebar, text="PiGPS Navigator",
             font=("Courier", 11, "bold"),
             fg=ACCENT, bg=BG_MID,
         ).place(x=8, y=y)
-
         y += 20
 
-        # ── GPS Status box ────────────────────────────────────────────────
+        # ── GPS Status ────────────────────────────────────────────────────
         self._gps_frame = tk.Frame(sidebar, bg=BG_LIGHT, bd=0)
         self._gps_frame.place(x=6, y=y, width=SIDEBAR_W - 12, height=56)
 
         self._lbl_fix = tk.Label(
-            self._gps_frame, text="NO FIX", font=("Courier", 8, "bold"),
+            self._gps_frame, text="NO FIX",
+            font=("Courier", 8, "bold"),
             fg=DEST_CLR, bg=BG_LIGHT,
         )
         self._lbl_fix.place(x=6, y=2)
@@ -264,42 +263,57 @@ class PiGPSApp:
             font=("Courier", 7), fg=TEXT_MUTED, bg=BG_LIGHT,
         )
         self._lbl_heading.place(x=6, y=44)
-
         y += 62
 
         # ── Algorithm selector ────────────────────────────────────────────
+        # 6 algorithms in 2 columns = 3 rows × 18px = 54px
         tk.Label(
-            sidebar, text="ALGORITHM", font=("Courier", 7, "bold"),
+            sidebar, text="ALGORITHM",
+            font=("Courier", 7, "bold"),
             fg=TEXT_MUTED, bg=BG_MID,
         ).place(x=6, y=y)
-        y += 14
+        y += 13
 
         self._algo_var = tk.StringVar(value=DEFAULT_ALGO)
         algo_frame = tk.Frame(sidebar, bg=BG_MID)
-        algo_frame.place(x=6, y=y, width=SIDEBAR_W - 12, height=36)
+        algo_frame.place(x=6, y=y, width=SIDEBAR_W - 12, height=54)
+
         for i, algo in enumerate(ALGORITHMS):
             rb = tk.Radiobutton(
-                algo_frame, text=algo, variable=self._algo_var,
+                algo_frame,
+                text=algo,
+                variable=self._algo_var,
                 value=algo,
-                font=("Courier", 7), fg=TEXT_PRIMARY, bg=BG_MID,
-                selectcolor=BG_LIGHT, activebackground=BG_MID,
+                font=("Courier", 7),
+                fg=TEXT_PRIMARY, bg=BG_MID,
+                selectcolor=BG_LIGHT,
+                activebackground=BG_MID,
                 activeforeground=ACCENT,
+                indicatoron=1,
             )
-            rb.grid(row=i//2, column=i%2, sticky="w", padx=2, pady=0)
+            rb.grid(
+                row=i // 2,
+                column=i % 2,
+                sticky="w",
+                padx=2,
+                pady=1,
+            )
+        y += 58
 
-        y += 42
-
-        # ── Destination input ──────────────────────────────────────────────
+        # ── Destination input ─────────────────────────────────────────────
         tk.Label(
-            sidebar, text="DESTINATION", font=("Courier", 7, "bold"),
+            sidebar, text="DESTINATION",
+            font=("Courier", 7, "bold"),
             fg=TEXT_MUTED, bg=BG_MID,
         ).place(x=6, y=y)
-        y += 14
+        y += 13
 
         self._dest_entry = tk.Entry(
             sidebar, font=("Courier", 8),
-            bg=BG_LIGHT, fg=TEXT_PRIMARY, insertbackground=ACCENT,
-            bd=0, highlightthickness=1, highlightcolor=ACCENT,
+            bg=BG_LIGHT, fg=TEXT_PRIMARY,
+            insertbackground=ACCENT,
+            bd=0, highlightthickness=1,
+            highlightcolor=ACCENT,
             highlightbackground=BG_LIGHT,
         )
         self._dest_entry.place(x=6, y=y, width=SIDEBAR_W - 32, height=24)
@@ -316,39 +330,41 @@ class PiGPSApp:
         ).place(x=SIDEBAR_W - 26, y=y, width=22, height=24)
         y += 28
 
-        btn_load = tk.Button(
+        # ── Action buttons ────────────────────────────────────────────────
+        tk.Button(
             sidebar, text="⬇ Load Map",
             font=("Courier", 8, "bold"),
-            fg=BG_DARK, bg=ACCENT, activebackground=ACCENT2,
+            fg=BG_DARK, bg=ACCENT,
+            activebackground=ACCENT2,
             bd=0, cursor="hand2",
             command=self._load_map_around_gps,
-        )
-        btn_load.place(x=6, y=y, width=SIDEBAR_W - 12, height=26)
-        y += 30
+        ).place(x=6, y=y, width=SIDEBAR_W - 12, height=24)
+        y += 28
 
         self._btn_route = tk.Button(
             sidebar, text="▶ Calculate Route",
             font=("Courier", 8, "bold"),
-            fg=BG_DARK, bg=ACCENT2, activebackground=ACCENT,
+            fg=BG_DARK, bg=ACCENT2,
+            activebackground=ACCENT,
             bd=0, cursor="hand2",
             command=self._do_route,
         )
-        self._btn_route.place(x=6, y=y, width=SIDEBAR_W - 12, height=26)
-        y += 30
-
-        btn_clr = tk.Button(
-            sidebar, text="✕ Clear Route",
-            font=("Courier", 8),
-            fg=TEXT_MUTED, bg=BG_LIGHT, activebackground=BG_DARK,
-            bd=0, cursor="hand2",
-            command=self._clear_route,
-        )
-        btn_clr.place(x=6, y=y, width=SIDEBAR_W - 12, height=24)
+        self._btn_route.place(x=6, y=y, width=SIDEBAR_W - 12, height=24)
         y += 28
 
-        # ── Route info box ────────────────────────────────────────────────
+        tk.Button(
+            sidebar, text="✕ Clear Route",
+            font=("Courier", 8),
+            fg=TEXT_MUTED, bg=BG_LIGHT,
+            activebackground=BG_DARK,
+            bd=0, cursor="hand2",
+            command=self._clear_route,
+        ).place(x=6, y=y, width=SIDEBAR_W - 12, height=24)
+        y += 28
+
+        # ── Route info ────────────────────────────────────────────────────
         self._info_frame = tk.Frame(sidebar, bg=BG_LIGHT)
-        self._info_frame.place(x=6, y=y, width=SIDEBAR_W - 12, height=48)
+        self._info_frame.place(x=6, y=y, width=SIDEBAR_W - 12, height=50)
 
         self._lbl_dist = tk.Label(
             self._info_frame, text="Distance: --",
@@ -367,31 +383,32 @@ class PiGPSApp:
             font=("Courier", 7), fg=TEXT_MUTED, bg=BG_LIGHT,
         )
         self._lbl_algo_used.place(x=6, y=34)
-
         y += 54
 
-        # ── Zoom buttons ──────────────────────────────────────────────────
+        # ── Zoom + Recentre ───────────────────────────────────────────────
         zf = tk.Frame(sidebar, bg=BG_MID)
-        zf.place(x=6, y=y, width=SIDEBAR_W - 12, height=26)
+        zf.place(x=6, y=y, width=SIDEBAR_W - 12, height=24)
 
         for txt, fn in [(" + ", self.viewport.zoom_in),
                         (" − ", self.viewport.zoom_out)]:
             tk.Button(
-                zf, text=txt, font=("Courier", 10, "bold"),
-                fg=TEXT_PRIMARY, bg=BG_LIGHT, activebackground=BG_DARK,
-                bd=0, cursor="hand2", command=fn,
+                zf, text=txt,
+                font=("Courier", 10, "bold"),
+                fg=TEXT_PRIMARY, bg=BG_LIGHT,
+                activebackground=BG_DARK,
+                bd=0, cursor="hand2",
+                command=fn,
             ).pack(side="left", expand=True, fill="both", padx=2)
-
-        y += 30
+        y += 28
 
         tk.Button(
             sidebar, text="⊙ Re-centre",
             font=("Courier", 8),
-            fg=TEXT_PRIMARY, bg=BG_LIGHT, activebackground=BG_DARK,
+            fg=TEXT_PRIMARY, bg=BG_LIGHT,
+            activebackground=BG_DARK,
             bd=0, cursor="hand2",
             command=self._centre_on_gps,
         ).place(x=6, y=y, width=SIDEBAR_W - 12, height=24)
-
         y += 28
 
         # ── Status bar ────────────────────────────────────────────────────
@@ -403,17 +420,16 @@ class PiGPSApp:
         )
         self._status_lbl.place(x=6, y=y, width=SIDEBAR_W - 12)
 
-        # ── Overlay on canvas ─────────────────────────────────────────────
-        # Scale bar
+        # ── Canvas overlays ───────────────────────────────────────────────
         self._scale_lbl = tk.Label(
-            self.canvas, text="", font=("Courier", 8),
-            fg=TEXT_MUTED, bg=BG_DARK,
+            self.canvas, text="",
+            font=("Courier", 7), fg=TEXT_MUTED, bg=BG_DARK,
         )
-        self._scale_lbl.place(x=10, y=WINDOW_H - 22)
+        self._scale_lbl.place(x=8, y=WINDOW_H - 16)
 
-        # Loading spinner label
         self._loading_lbl = tk.Label(
-            self.canvas, text="", font=("Courier", 10, "bold"),
+            self.canvas, text="",
+            font=("Courier", 10, "bold"),
             fg=ACCENT, bg=BG_DARK,
         )
         self._loading_lbl.place(x=MAP_PANEL_W // 2 - 80, y=WINDOW_H // 2 - 12)
