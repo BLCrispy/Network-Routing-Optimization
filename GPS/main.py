@@ -22,6 +22,7 @@ from config import (
     GPS_POLL_MS, MAP_REFRESH_MS, REROUTE_DIST_M,
     GRAPH_RADIUS_M,
 )
+
 from gps_reader import GPSReader
 from map_engine import GraphLoader, MapRenderer, Viewport
 from routing import find_path
@@ -32,6 +33,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# ─────────────────────────────────────────────────────────────────────────────
+# GPS Touch Screen Keyboard
+# ─────────────────────────────────────────────────────────────────────────────
 
 class OSKKeyboard(tk.Toplevel):
     """

@@ -34,7 +34,7 @@ def _edge_weight(G: nx.MultiDiGraph, u: int, v: int, weight: str = "length") -> 
         for d in data.values()
     )
 
-
+#heuristic function to estimate the straight-line distance between two points on the Earth's surface using latitude and longitude
 def _haversine(G: nx.MultiDiGraph, u: int, v: int) -> float:
     """Great-circle distance in metres between two OSM nodes."""
     R = 6_371_000
@@ -66,6 +66,7 @@ def dijkstra(G: nx.MultiDiGraph, orig: int, dest: int, weight: str = "length") -
     pq   = [(0.0, orig)]
 
     while pq:
+        # d=current_cost, u=current_node
         d, u = heapq.heappop(pq)
         if u == dest:
             return reconstruct_path(prev, dest)
@@ -250,16 +251,232 @@ def _aco_walk(G, orig, dest, weight, tau, alpha, beta):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# 5. Bidirectional Dijkstra
+# ─────────────────────────────────────────────────────────────────────────────
+
+def bidirectional_dijkstra(
+    G: nx.MultiDiGraph,
+    orig: int,
+    dest: int,
+    weight: str = "length",
+) -> List[int]:
+    """
+    Bidirectional Dijkstra — searches from both ends simultaneously.
+    Stops when the frontiers meet, cutting the search space roughly in half.
+    Memory efficient on large graphs.
+    """
+    if orig == dest:
+        return [orig]
+
+    # Forward search structures
+    dist_f  = {orig: 0.0}
+    prev_f  = {orig: None}
+    pq_f    = [(0.0, orig)]
+
+    # Backward search structures (search on reversed graph)
+    dist_b  = {dest: 0.0}
+    prev_b  = {dest: None}
+    pq_b    = [(0.0, dest)]
+
+    visited_f: set = set()
+    visited_b: set = set()
+
+    best      = float("inf")
+    meeting   = None
+
+    def _check_meeting(node):
+        nonlocal best, meeting
+        if node in dist_f and node in dist_b:
+            total = dist_f[node] + dist_b[node]
+            if total < best:
+                best    = total
+                meeting = node
+
+    while pq_f or pq_b:
+        # Alternate between forward and backward
+        if pq_f:
+            d, u = heapq.heappop(pq_f)
+            if u not in visited_f:
+                visited_f.add(u)
+                _check_meeting(u)
+                if dist_f.get(u, float("inf")) <= d:
+                    for v in G.successors(u):
+                        w  = _edge_weight(G, u, v, weight)
+                        nd = d + w
+                        if nd < dist_f.get(v, float("inf")):
+                            dist_f[v] = nd
+                            prev_f[v] = u
+                            heapq.heappush(pq_f, (nd, v))
+                            _check_meeting(v)
+
+        if pq_b:
+            d, u = heapq.heappop(pq_b)
+            if u not in visited_b:
+                visited_b.add(u)
+                _check_meeting(u)
+                if dist_b.get(u, float("inf")) <= d:
+                    # Traverse reversed edges for backward search
+                    for v in G.predecessors(u):
+                        w  = _edge_weight(G, v, u, weight)
+                        nd = d + w
+                        if nd < dist_b.get(v, float("inf")):
+                            dist_b[v] = nd
+                            prev_b[v] = u
+                            heapq.heappush(pq_b, (nd, v))
+                            _check_meeting(v)
+
+        # Termination condition — both frontiers have expanded
+        # past the best known meeting point
+        top_f = pq_f[0][0] if pq_f else float("inf")
+        top_b = pq_b[0][0] if pq_b else float("inf")
+        if top_f + top_b >= best and meeting is not None:
+            break
+
+    if meeting is None:
+        logger.warning("Bidirectional Dijkstra: no path found")
+        return []
+
+    return _merge_paths(prev_f, prev_b, orig, dest, meeting)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 6. Bidirectional A*
+# ─────────────────────────────────────────────────────────────────────────────
+
+def bidirectional_astar(
+    G: nx.MultiDiGraph,
+    orig: int,
+    dest: int,
+    weight: str = "length",
+) -> List[int]:
+    """
+    Bidirectional A* — heuristic-guided search from both ends.
+    Most memory-efficient algorithm for large geographic graphs.
+    Uses consistent average heuristic to guarantee optimality.
+    """
+    if orig == dest:
+        return [orig]
+
+    def h_forward(node):
+        return _haversine(G, node, dest)
+
+    def h_backward(node):
+        return _haversine(G, node, orig)
+
+    # Forward
+    g_f     = {orig: 0.0}
+    prev_f  = {orig: None}
+    pq_f    = [(h_forward(orig), 0.0, orig)]
+
+    # Backward
+    g_b     = {dest: 0.0}
+    prev_b  = {dest: None}
+    pq_b    = [(h_backward(dest), 0.0, dest)]
+
+    visited_f: set = set()
+    visited_b: set = set()
+
+    best    = float("inf")
+    meeting = None
+
+    def _update_best(node):
+        nonlocal best, meeting
+        if node in g_f and node in g_b:
+            total = g_f[node] + g_b[node]
+            if total < best:
+                best    = total
+                meeting = node
+
+    while pq_f or pq_b:
+        if pq_f:
+            _, cost, u = heapq.heappop(pq_f)
+            if u not in visited_f:
+                visited_f.add(u)
+                _update_best(u)
+                if cost <= g_f.get(u, float("inf")):
+                    for v in G.successors(u):
+                        w  = _edge_weight(G, u, v, weight)
+                        ng = cost + w
+                        if ng < g_f.get(v, float("inf")):
+                            g_f[v]    = ng
+                            prev_f[v] = u
+                            f = ng + h_forward(v)
+                            heapq.heappush(pq_f, (f, ng, v))
+                            _update_best(v)
+
+        if pq_b:
+            _, cost, u = heapq.heappop(pq_b)
+            if u not in visited_b:
+                visited_b.add(u)
+                _update_best(u)
+                if cost <= g_b.get(u, float("inf")):
+                    for v in G.predecessors(u):
+                        w  = _edge_weight(G, v, u, weight)
+                        ng = cost + w
+                        if ng < g_b.get(v, float("inf")):
+                            g_b[v]    = ng
+                            prev_b[v] = u
+                            f = ng + h_backward(v)
+                            heapq.heappush(pq_b, (f, ng, v))
+                            _update_best(v)
+
+        # Termination — prune when frontiers exceed best path
+        top_f = pq_f[0][1] if pq_f else float("inf")
+        top_b = pq_b[0][1] if pq_b else float("inf")
+        if top_f + top_b >= best and meeting is not None:
+            break
+
+    if meeting is None:
+        logger.warning("Bidirectional A*: no path found")
+        return []
+
+    return _merge_paths(prev_f, prev_b, orig, dest, meeting)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Path merger helper (used by both bidirectional algorithms)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _merge_paths(
+    prev_f: dict,
+    prev_b: dict,
+    orig:   int,
+    dest:   int,
+    meeting: int,
+) -> List[int]:
+    """
+    Reconstruct full path by joining forward and backward traces
+    at the meeting node.
+    """
+    # Forward path: orig → meeting
+    path_f = []
+    node   = meeting
+    while node is not None:
+        path_f.append(node)
+        node = prev_f.get(node)
+    path_f.reverse()
+
+    # Backward path: meeting → dest
+    path_b = []
+    node   = prev_b.get(meeting)   # skip meeting node, already in path_f
+    while node is not None:
+        path_b.append(node)
+        node = prev_b.get(node)
+
+    return path_f + path_b
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Dispatcher
 # ─────────────────────────────────────────────────────────────────────────────
 
 ALGO_MAP = {
-    "dijkstra":     dijkstra,
-    "a*":           astar,
-    "bellman-ford": bellman_ford,
-    "aco":          aco,
+    "dijkstra":              dijkstra,
+    "a*":                    astar,
+    "bellman-ford":          bellman_ford,
+    "aco":                   aco,
+    "bidirectional dijkstra": bidirectional_dijkstra,
+    "bidirectional a*":       bidirectional_astar,
 }
-
 
 def find_path(
     G: nx.MultiDiGraph,
@@ -268,17 +485,13 @@ def find_path(
     algorithm: str = "A*",
     weight: str = "length",
 ) -> List[int]:
-    """
-    Unified entry point.
-    algorithm: one of 'A*', 'Dijkstra', 'Bellman-Ford', 'ACO'  (case-insensitive)
-    """
+    # Normalise key — map UI labels to algo map keys
+    label_map = {
+        "bi-dijkstra":          "bidirectional dijkstra",
+        "bi-a*":                "bidirectional a*",
+        "bidirectional a*":     "bidirectional a*",
+        "bidirectional dijkstra": "bidirectional dijkstra",
+    }
     key = algorithm.lower()
+    key = label_map.get(key, key)
     fn  = ALGO_MAP.get(key)
-    if fn is None:
-        logger.error(f"Unknown algorithm '{algorithm}', falling back to A*")
-        fn = astar
-    try:
-        return fn(G, orig, dest, weight)
-    except Exception as e:
-        logger.error(f"Routing error ({algorithm}): {e}")
-        return []

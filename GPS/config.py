@@ -11,16 +11,16 @@ GPS_TIMEOUT     = 1              # seconds
 CACHE_DIR       = os.path.expanduser("~/.pigps_cache")
 GRAPH_CACHE     = os.path.join(CACHE_DIR, "graph_cache.graphml")
 GRAPH_RADIUS_M  = 1000           # metres around current location to download
-NETWORK_TYPE    = "walk"        # 'drive' | 'walk' | 'bike'
+NETWORK_TYPE    = "drive"        # 'drive' | 'walk' | 'bike'
 
 # ── Pre-downloaded GraphML ────────────────────────────────────────────────────
 # Set this to the path of your pre-downloaded GraphML file.
 # The app will load this instead of downloading from OSM.
-PRELOADED_GRAPH = "/home/gps_pi/Network-Routing-Optimization/GraphML_Archive/cookeville_full.pkl"
+PRELOADED_GRAPH = "/home/gps_pi/Network-Routing-Optimization/GraphML_Archive/lebanon_cookeville.pkl"
 
 # Subgraph viewport settings
-SUBGRAPH_RADIUS_M = 1500   # metres around user to extract for rendering
-ROUTING_RADIUS_M  = 5000   # metres around user to extract for routing
+SUBGRAPH_RADIUS_M = 2000   # metres around user to extract for rendering
+ROUTING_RADIUS_M  = 50000   # metres around user to extract for routing
 
 
 # ── UI Settings ──────────────────────────────────────────────────────────────
@@ -45,7 +45,7 @@ POSITION_CLR    = "#39d353"
 DEST_CLR        = "#f85149"
 
 # ── Routing ──────────────────────────────────────────────────────────────────
-ALGORITHMS      = ["A*", "Dijkstra", "Bellman-Ford", "ACO"]
+ALGORITHMS = ["A*", "Dijkstra", "Bellman-Ford", "ACO", "Bi-Dijkstra", "Bi-A*"]
 DEFAULT_ALGO    = "A*"
 ACO_ANTS        = 30
 ACO_ITERATIONS  = 50
