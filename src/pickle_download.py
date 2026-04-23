@@ -1,32 +1,36 @@
-import pickle
 import sqlite3
 import os
 
-print("Loading slim pickle...")
-with open("lebanon_cookeville_slim.pkl", "rb") as f:
-    G = pickle.load(f)
+# Tight bounding box — just Lebanon to Cookeville corridor
+# Roughly 10km either side of I-40
+NORTH =  36.28
+SOUTH =  36.05
+EAST  = -85.45
+WEST  = -86.45
 
-print(f"Graph: {G.number_of_nodes()} nodes, {G.number_of_edges()} edges")
+src = "lebanon_cookeville.db"   # your existing large DB
+dst = "leb_cook_clipped.db"
 
-print("Converting to SQLite...")
-db_path = "lebanon_cookeville.db"
+print(f"Source DB size: {os.path.getsize(src)/1024/1024:.1f} MB")
 
-if os.path.exists(db_path):
-    os.remove(db_path)
+if os.path.exists(dst):
+    os.remove(dst)
 
-conn = sqlite3.connect(db_path)
-c    = conn.cursor()
+src_conn = sqlite3.connect(src)
+dst_conn = sqlite3.connect(dst)
+
+src_c = src_conn.cursor()
+dst_c = dst_conn.cursor()
 
 # Create tables
-c.execute("""
+dst_c.execute("""
     CREATE TABLE nodes (
-        id   INTEGER PRIMARY KEY,
-        lat  REAL NOT NULL,
-        lon  REAL NOT NULL
+        id  INTEGER PRIMARY KEY,
+        lat REAL NOT NULL,
+        lon REAL NOT NULL
     )
 """)
-
-c.execute("""
+dst_c.execute("""
     CREATE TABLE edges (
         u      INTEGER NOT NULL,
         v      INTEGER NOT NULL,
@@ -34,41 +38,132 @@ c.execute("""
     )
 """)
 
-# Insert nodes in batches
-print("Inserting nodes...")
-node_batch = []
-for node, data in G.nodes(data=True):
-    node_batch.append((int(node), float(data["y"]), float(data["x"])))
-    if len(node_batch) >= 5000:
-        c.executemany("INSERT INTO nodes VALUES (?,?,?)", node_batch)
-        node_batch = []
-if node_batch:
-    c.executemany("INSERT INTO nodes VALUES (?,?,?)", node_batch)
+# Copy only nodes inside the bounding box
+print("Clipping nodes...")
+src_c.execute("""
+    SELECT id, lat, lon FROM nodes
+    WHERE lat BETWEEN ? AND ?
+      AND lon BETWEEN ? AND ?
+""", (SOUTH, NORTH, WEST, EAST))
 
-# Insert edges in batches
-print("Inserting edges...")
-edge_batch = []
-for u, v, data in G.edges(data=True):
-    edge_batch.append((int(u), int(v), float(data.get("length", 1.0))))
-    if len(edge_batch) >= 5000:
-        c.executemany("INSERT INTO edges VALUES (?,?,?)", edge_batch)
-        edge_batch = []
-if edge_batch:
-    c.executemany("INSERT INTO edges VALUES (?,?,?)", edge_batch)
+nodes = src_c.fetchall()
+node_ids = set(int(r[0]) for r in nodes)
+dst_c.executemany("INSERT INTO nodes VALUES (?,?,?)", nodes)
+print(f"Kept {len(nodes)} nodes")
 
-# Create indices for fast spatial and neighbour queries
+# Copy only edges where BOTH endpoints are in the clipped area
+print("Clipping edges...")
+batch = []
+src_c.execute("SELECT u, v, length FROM edges")
+kept = 0
+skipped = 0
+for row in src_c:
+    u, v = int(row[0]), int(row[1])
+    if u in node_ids and v in node_ids:
+        batch.append(row)
+        kept += 1
+        if len(batch) >= 10000:
+            dst_c.executemany("INSERT INTO edges VALUES (?,?,?)", batch)
+            batch = []
+    else:
+        skipped += 1
+
+if batch:
+    dst_c.executemany("INSERT INTO edges VALUES (?,?,?)", batch)
+
+print(f"Kept {kept} edges, skipped {skipped}")
+
+# Create indices
 print("Creating indices...")
-c.execute("CREATE INDEX idx_nodes_lat ON nodes(lat)")
-c.execute("CREATE INDEX idx_nodes_lon ON nodes(lon)")
-c.execute("CREATE INDEX idx_edges_u   ON edges(u)")
-c.execute("CREATE INDEX idx_edges_v   ON edges(v)")
+dst_c.execute("CREATE INDEX idx_nodes_lat ON nodes(lat)")
+dst_c.execute("CREATE INDEX idx_nodes_lon ON nodes(lon)")
+dst_c.execute("CREATE INDEX idx_edges_u   ON edges(u)")
+dst_c.execute("CREATE INDEX idx_edges_v   ON edges(v)")
 
-conn.commit()
-conn.close()
+dst_conn.commit()
+src_conn.close()
+dst_conn.close()
 
-db_mb = os.path.getsize(db_path) / 1024 / 1024
-print(f"Done! SQLite DB: {db_mb:.1f} MB")
-print(f"Reduction: {90/db_mb:.1f}x smaller than slim pickle")
+dst_mb = os.path.getsize(dst) / 1024 / 1024
+print(f"Clipped DB: {dst_mb:.1f} MB")
+print(f"Done — push {dst} to the Pi")
+
+#-----------------
+# This is for reference for converting to SQlite
+#-----------------
+
+
+# import pickle
+# import sqlite3
+# import os
+
+# print("Loading slim pickle...")
+# with open("lebanon_cookeville_slim.pkl", "rb") as f:
+#     G = pickle.load(f)
+
+# print(f"Graph: {G.number_of_nodes()} nodes, {G.number_of_edges()} edges")
+
+# print("Converting to SQLite...")
+# db_path = "lebanon_cookeville.db"
+
+# if os.path.exists(db_path):
+#     os.remove(db_path)
+
+# conn = sqlite3.connect(db_path)
+# c    = conn.cursor()
+
+# # Create tables
+# c.execute("""
+#     CREATE TABLE nodes (
+#         id   INTEGER PRIMARY KEY,
+#         lat  REAL NOT NULL,
+#         lon  REAL NOT NULL
+#     )
+# """)
+
+# c.execute("""
+#     CREATE TABLE edges (
+#         u      INTEGER NOT NULL,
+#         v      INTEGER NOT NULL,
+#         length REAL NOT NULL
+#     )
+# """)
+
+# # Insert nodes in batches
+# print("Inserting nodes...")
+# node_batch = []
+# for node, data in G.nodes(data=True):
+#     node_batch.append((int(node), float(data["y"]), float(data["x"])))
+#     if len(node_batch) >= 5000:
+#         c.executemany("INSERT INTO nodes VALUES (?,?,?)", node_batch)
+#         node_batch = []
+# if node_batch:
+#     c.executemany("INSERT INTO nodes VALUES (?,?,?)", node_batch)
+
+# # Insert edges in batches
+# print("Inserting edges...")
+# edge_batch = []
+# for u, v, data in G.edges(data=True):
+#     edge_batch.append((int(u), int(v), float(data.get("length", 1.0))))
+#     if len(edge_batch) >= 5000:
+#         c.executemany("INSERT INTO edges VALUES (?,?,?)", edge_batch)
+#         edge_batch = []
+# if edge_batch:
+#     c.executemany("INSERT INTO edges VALUES (?,?,?)", edge_batch)
+
+# # Create indices for fast spatial and neighbour queries
+# print("Creating indices...")
+# c.execute("CREATE INDEX idx_nodes_lat ON nodes(lat)")
+# c.execute("CREATE INDEX idx_nodes_lon ON nodes(lon)")
+# c.execute("CREATE INDEX idx_edges_u   ON edges(u)")
+# c.execute("CREATE INDEX idx_edges_v   ON edges(v)")
+
+# conn.commit()
+# conn.close()
+
+# db_mb = os.path.getsize(db_path) / 1024 / 1024
+# print(f"Done! SQLite DB: {db_mb:.1f} MB")
+# print(f"Reduction: {90/db_mb:.1f}x smaller than slim pickle")
 
 
 #-----------------

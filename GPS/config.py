@@ -16,7 +16,7 @@ NETWORK_TYPE    = "drive"        # 'drive' | 'walk' | 'bike'
 # ── Pre-downloaded GraphML ────────────────────────────────────────────────────
 # Set this to the path of your pre-downloaded GraphML file.
 # The app will load this instead of downloading from OSM.
-GRAPH_DB = "/home/gps_pi/Network-Routing-Optimization/GraphML_Archive/lebanon_cookeville.db"
+GRAPH_DB = "/home/gps_pi/Network-Routing-Optimization/GraphML_Archive/leb_cook_clipped.db"
 
 # Subgraph viewport settings
 SUBGRAPH_RADIUS_M = 2000   # metres around user to extract for rendering

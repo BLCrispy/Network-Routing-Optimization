@@ -280,44 +280,65 @@ class GraphLoader:
 
     def _load_routing_graph(self):
         """
-        Load full graph for routing into RAM in background.
-        Uses chunked loading to avoid memory spike.
+        Load full routing graph from SQLite using bulk fetch.
+        Fetches all data in two queries then builds graph in one pass.
         """
-        print("[LOADER] Loading routing graph from SQLite...")
+        print("[LOADER] Loading routing graph...")
         try:
-            conn = sqlite3.connect(self._db_path, timeout=30)
-            c    = conn.cursor()
+            import time as _time
+            t0 = _time.time()
 
+            conn = sqlite3.connect(self._db_path, timeout=30)
+            # Use faster row access
+            conn.execute("PRAGMA journal_mode=OFF")
+            conn.execute("PRAGMA synchronous=OFF")
+            conn.execute("PRAGMA cache_size=10000")
+            conn.execute("PRAGMA temp_store=MEMORY")
+            c = conn.cursor()
+
+            # Fetch everything in one shot — faster than chunking
+            print("[LOADER] Fetching nodes...")
+            c.execute("SELECT id, lat, lon FROM nodes")
+            nodes = c.fetchall()
+            print(f"[LOADER] Fetched {len(nodes)} nodes in {_time.time()-t0:.1f}s")
+
+            t1 = _time.time()
+            print("[LOADER] Fetching edges...")
+            c.execute("SELECT u, v, length FROM edges")
+            edges = c.fetchall()
+            print(f"[LOADER] Fetched {len(edges)} edges in {_time.time()-t1:.1f}s")
+            conn.close()
+
+            # Build graph in one pass using generators — avoids intermediate lists
+            t2 = _time.time()
+            print("[LOADER] Building graph...")
             G = nx.MultiDiGraph()
             G.graph["crs"] = "epsg:4326"
 
-            # Load nodes in chunks
-            c.execute("SELECT COUNT(*) FROM nodes")
-            total_nodes = c.fetchone()[0]
-            print(f"[LOADER] Loading {total_nodes} nodes...")
+            G.add_nodes_from(
+                (int(r[0]), {"y": float(r[1]), "x": float(r[2])})
+                for r in nodes
+            )
+            G.add_edges_from(
+                (int(r[0]), int(r[1]), {"length": float(r[2])})
+                for r in edges
+            )
 
-            chunk = 5000
-            for offset in range(0, total_nodes, chunk):
-                c.execute(
-                    "SELECT id, lat, lon FROM nodes LIMIT ? OFFSET ?",
-                    (chunk, offset)
-                )
-                for row in c.fetchall():
-                    G.add_node(int(row[0]), y=float(row[1]), x=float(row[2]))
+            print(f"[LOADER] Graph built in {_time.time()-t2:.1f}s")
+            print(f"[LOADER] Total load time: {_time.time()-t0:.1f}s")
+            print(f"[LOADER] {G.number_of_nodes()} nodes, {G.number_of_edges()} edges")
 
-            # Load edges in chunks
-            c.execute("SELECT COUNT(*) FROM edges")
-            total_edges = c.fetchone()[0]
-            print(f"[LOADER] Loading {total_edges} edges...")
+            import resource
+            ram_mb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
+            print(f"[LOADER] RAM: {ram_mb:.0f} MB")
 
-            for offset in range(0, total_edges, chunk):
-                c.execute(
-                    "SELECT u, v, length FROM edges LIMIT ? OFFSET ?",
-                    (chunk, offset)
-                )
-                for row in c.fetchall():
-                    G.add_edge(int(row[0]), int(row[1]),
-                               length=float(row[2]))
+            with self._lock:
+                self.G_full = G
+
+        except Exception as e:
+            logger.error(f"Routing graph load failed: {e}")
+            import traceback
+            traceback.print_exc()
 
             conn.close()
 
