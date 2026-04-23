@@ -158,17 +158,22 @@ class GraphLoader:
 
     def nearest_node(self, lat: float, lon: float,
                      use_full: bool = True) -> Optional[int]:
-        """Find nearest node using direct DB spatial query — no RAM overhead."""
+        """
+        Find nearest node using direct SQLite spatial query.
+        No scikit-learn required — pure SQL distance calculation.
+        """
         if not self._db_ok:
             return None
         try:
-            # Fast bounding box pre-filter then exact distance
-            deg_margin = 0.05  # ~5km search box
+            deg_margin = 0.05
             conn = sqlite3.connect(self._db_path, timeout=10)
             c    = conn.cursor()
+
+            # Bounding box pre-filter then sort by approximate distance
             c.execute("""
-                SELECT id, lat, lon,
-                       ((lat - ?) * (lat - ?) + (lon - ?) * (lon - ?)) AS dist2
+                SELECT id,
+                       ((lat - ?) * (lat - ?) * 111320 * 111320 +
+                        (lon - ?) * (lon - ?) * 85000  * 85000) AS dist2
                 FROM nodes
                 WHERE lat BETWEEN ? AND ?
                   AND lon BETWEEN ? AND ?
@@ -179,21 +184,63 @@ class GraphLoader:
                 lat - deg_margin, lat + deg_margin,
                 lon - deg_margin, lon + deg_margin,
             ))
-            row = c.fetchone()
+            row = conn.fetchone() if False else c.fetchone()
             conn.close()
-            return int(row[0]) if row else None
+            if row:
+                logger.debug(f"Nearest node to ({lat:.4f},{lon:.4f}): {row[0]}")
+                return int(row[0])
+            return None
         except Exception as e:
             logger.error(f"nearest_node error: {e}")
             return None
 
     def geocode(self, address: str) -> Optional[Tuple[float, float]]:
+        """
+        Try multiple geocoding strategies to maximise success rate.
+        Falls back through progressively simpler query formats.
+        """
         if not OSMNX_OK:
             return None
-        try:
-            return ox.geocode(address)
-        except Exception as e:
-            logger.error(f"Geocode failed for '{address}': {e}")
-            return None
+
+        # Build a list of queries to try in order
+        queries = [address]
+
+        # If address doesn't mention TN, append it
+        if "TN" not in address.upper() and "tennessee" not in address.lower():
+            queries.append(f"{address}, Tennessee, USA")
+
+        # If it looks like a street address, try city-only fallback
+        parts = [p.strip() for p in address.split(",")]
+        if len(parts) >= 2:
+            # Try just the last two parts (city, state)
+            queries.append(", ".join(parts[-2:]))
+            # Try appending Tennessee
+            queries.append(f"{parts[0]}, Tennessee, USA")
+
+        # Always try with full state name appended
+        queries.append(f"{address}, Tennessee")
+
+        for query in queries:
+            try:
+                result = ox.geocode(query)
+                if result:
+                    lat, lon = result
+                    # Validate result is within our graph bounding box
+                    # with a generous margin
+                    if 35.5 <= lat <= 36.8 and -87.0 <= lon <= -85.0:
+                        logger.info(f"Geocoded '{query}' → {lat:.4f},{lon:.4f}")
+                        return result
+                    else:
+                        logger.warning(
+                            f"Geocode result for '{query}' is outside Tennessee"
+                            f" ({lat:.4f},{lon:.4f}) — skipping"
+                        )
+            except Exception as e:
+                logger.debug(f"Geocode attempt failed for '{query}': {e}")
+                continue
+
+        logger.error(f"All geocode attempts failed for '{address}'")
+        return None
 
     # ── Internal ──────────────────────────────────────────────────────────────
 
@@ -279,42 +326,32 @@ class GraphLoader:
             return None
 
     def _load_routing_graph(self):
-        """
-        Load full routing graph from SQLite using bulk fetch.
-        Fetches all data in two queries then builds graph in one pass.
-        """
+        """Load full routing graph from SQLite in one fast pass."""
+        import time as _time
         print("[LOADER] Loading routing graph...")
-        try:
-            import time as _time
-            t0 = _time.time()
+        t0 = _time.time()
 
+        try:
             conn = sqlite3.connect(self._db_path, timeout=30)
-            # Use faster row access
             conn.execute("PRAGMA journal_mode=OFF")
             conn.execute("PRAGMA synchronous=OFF")
             conn.execute("PRAGMA cache_size=10000")
             conn.execute("PRAGMA temp_store=MEMORY")
             c = conn.cursor()
 
-            # Fetch everything in one shot — faster than chunking
-            print("[LOADER] Fetching nodes...")
             c.execute("SELECT id, lat, lon FROM nodes")
             nodes = c.fetchall()
-            print(f"[LOADER] Fetched {len(nodes)} nodes in {_time.time()-t0:.1f}s")
+            print(f"[LOADER] {len(nodes)} nodes in {_time.time()-t0:.1f}s")
 
             t1 = _time.time()
-            print("[LOADER] Fetching edges...")
             c.execute("SELECT u, v, length FROM edges")
             edges = c.fetchall()
-            print(f"[LOADER] Fetched {len(edges)} edges in {_time.time()-t1:.1f}s")
+            print(f"[LOADER] {len(edges)} edges in {_time.time()-t1:.1f}s")
             conn.close()
 
-            # Build graph in one pass using generators — avoids intermediate lists
             t2 = _time.time()
-            print("[LOADER] Building graph...")
             G = nx.MultiDiGraph()
             G.graph["crs"] = "epsg:4326"
-
             G.add_nodes_from(
                 (int(r[0]), {"y": float(r[1]), "x": float(r[2])})
                 for r in nodes
@@ -323,30 +360,12 @@ class GraphLoader:
                 (int(r[0]), int(r[1]), {"length": float(r[2])})
                 for r in edges
             )
-
             print(f"[LOADER] Graph built in {_time.time()-t2:.1f}s")
-            print(f"[LOADER] Total load time: {_time.time()-t0:.1f}s")
-            print(f"[LOADER] {G.number_of_nodes()} nodes, {G.number_of_edges()} edges")
+            print(f"[LOADER] Total: {_time.time()-t0:.1f}s")
 
             import resource
-            ram_mb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
-            print(f"[LOADER] RAM: {ram_mb:.0f} MB")
-
-            with self._lock:
-                self.G_full = G
-
-        except Exception as e:
-            logger.error(f"Routing graph load failed: {e}")
-            import traceback
-            traceback.print_exc()
-
-            conn.close()
-
-            import resource
-            ram_mb = resource.getrusage(
-                resource.RUSAGE_SELF).ru_maxrss / 1024
-            print(f"[LOADER] Routing graph ready: {G.number_of_nodes()} nodes")
-            print(f"[LOADER] RAM usage: {ram_mb:.0f} MB")
+            ram = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
+            print(f"[LOADER] RAM: {ram:.0f} MB")
 
             with self._lock:
                 self.G_full = G
