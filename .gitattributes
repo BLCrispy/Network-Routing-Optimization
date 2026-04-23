@@ -2,3 +2,6 @@
 * text=auto
 C:/Users/bryce/OneDrive/Documents/Network-Routing-Optimization/GraphML_Archive/New[[:space:]]York[[:space:]]City_NY_USA.graphml filter=lfs diff=lfs merge=lfs -text
 C:/Users/bryce/OneDrive/Documents/Network-Routing-Optimization/GraphML_Archive/lebanon_cookeville.pkl filter=lfs diff=lfs merge=lfs -text
+C:/Users/bryce/OneDrive/Documents/Network-Routing-Optimization/GraphML_Archive/lebanon_cookeville.pkl filter=lfs diff=lfs merge=lfs -text
+git filter=lfs diff=lfs merge=lfs -text
+C:/Users/bryce/OneDrive/Documents/Network-Routing-Optimization/GraphML_Archive/lebanon_cookeville.pkl filter=lfs diff=lfs merge=lfs -text
