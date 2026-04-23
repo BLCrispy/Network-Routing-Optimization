@@ -24,12 +24,15 @@ from config import (
     GPS_POLL_MS,
     MAP_REFRESH_MS,
     REROUTE_DIST_M,
+    OFF_ROUTE_THRESHOLD_M,
+    REROUTE_COOLDOWN_S,
     SUBGRAPH_RADIUS_M,
     DISPLAY_REFRESH_MIN_MOVE_M,
     LOCAL_ROUTE_MAX_M,
     LONG_ROUTE_MARGIN_STEPS_M,
     LOCAL_ONLY_ALGOS,
 )
+
 from gps_reader import GPSReader
 from map_engine import GraphLoader, MapRenderer, Viewport
 from routing import find_path
@@ -177,6 +180,10 @@ class PiGPSApp:
         self._user_panning = False
         self._last_reroute_pos: Optional[Tuple[float, float]] = None
         self._last_display_refresh_pos: Optional[Tuple[float, float]] = None
+
+        self._last_reroute_time = 0.0
+        self._reroute_in_progress = False
+
 
         self._build_ui()
 
@@ -358,7 +365,32 @@ class PiGPSApp:
             bd=0,
             command=self._clear_route,
         ).place(x=6, y=y, width=SIDEBAR_W - 12, height=24)
+        y += 30
+
+        tk.Button(
+            sidebar,
+            text="Zoom In (+)",
+            font=("Courier", 8),
+            fg=BG_DARK,
+            bg=ACCENT,
+            activebackground=ACCENT2,
+            bd=0,
+            command=lambda: self._zoom(1),
+        ).place(x=6, y=y, width=(SIDEBAR_W - 18) // 2, height=24)
+
+        tk.Button(
+            sidebar,
+            text="Zoom Out (-)",
+            font=("Courier", 8),
+            fg=BG_DARK,
+            bg=ACCENT2,
+            activebackground=ACCENT,
+            bd=0,
+            command=lambda: self._zoom(-1),
+        ).place(x=12 + (SIDEBAR_W - 18) // 2, y=y, width=(SIDEBAR_W - 18) // 2, height=24)
+
         y += 34
+
 
         info_frame = tk.Frame(sidebar, bg=BG_LIGHT)
         info_frame.place(x=6, y=y, width=SIDEBAR_W - 12, height=96)
@@ -439,10 +471,9 @@ class PiGPSApp:
                 self.loader.update_subgraph(lat, lon, SUBGRAPH_RADIUS_M)
                 self._last_display_refresh_pos = (lat, lon)
 
-            if self.route_nodes and self._last_reroute_pos:
-                moved = self._haversine(lat, lon, self._last_reroute_pos[0], self._last_reroute_pos[1])
-                if moved > REROUTE_DIST_M:
-                    self._check_off_route(lat, lon)
+            if self.route_nodes and self.dest_latlon:
+                self._check_off_route(lat, lon)
+
         else:
             self._lbl_fix.config(text="NO FIX", fg=DEST_CLR)
 
@@ -623,10 +654,15 @@ class PiGPSApp:
         return best_result
 
     def _check_off_route(self, lat: float, lon: float):
-        if self.dest_latlon is None or self._routing_active:
+        if self.dest_latlon is None:
             return
 
-        self._last_reroute_pos = (lat, lon)
+        if not self._should_reroute_now(lat, lon):
+            return
+
+        self._reroute_in_progress = True
+        self._last_reroute_time = time.time()
+
         algo = self.route_algorithm
 
         def _worker():
@@ -648,13 +684,17 @@ class PiGPSApp:
                     self.route_graph = route_graph
                     self.dest_node = dest_node
                     self.renderer.set_route_coords(route_graph, path)
+                    self._last_reroute_pos = (lat, lon)
                     self._set_status("Re-routed.", "ok")
 
                 self.root.after(0, _apply)
             except Exception:
                 logger.exception("Re-route failed")
+            finally:
+                self._reroute_in_progress = False
 
         threading.Thread(target=_worker, daemon=True).start()
+
 
     def _clear_route(self):
         self.route_nodes = []
@@ -697,6 +737,36 @@ class PiGPSApp:
                 best_node = node_id
 
         return best_node
+
+
+    def _distance_to_route_m(self, lat: float, lon: float) -> float:
+        if not self.renderer or not getattr(self.renderer, "_route_points", None):
+            return float("inf")
+
+        best = float("inf")
+        lon_scale = 111_320 * max(math.cos(math.radians(lat)), 0.2)
+
+        for route_lat, route_lon in self.renderer._route_points:
+            dy = (route_lat - lat) * 111_320
+            dx = (route_lon - lon) * lon_scale
+            dist = math.sqrt(dx * dx + dy * dy)
+            if dist < best:
+                best = dist
+
+        return best
+
+    def _should_reroute_now(self, lat: float, lon: float) -> bool:
+        if self._reroute_in_progress or self._routing_active:
+            return False
+
+        now = time.time()
+        if now - self._last_reroute_time < REROUTE_COOLDOWN_S:
+            return False
+
+        dist_to_route = self._distance_to_route_m(lat, lon)
+        return dist_to_route > OFF_ROUTE_THRESHOLD_M
+
+
 
     def _should_refresh_display(self, lat: float, lon: float) -> bool:
         if self._last_display_refresh_pos is None:
