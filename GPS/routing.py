@@ -1,49 +1,42 @@
-# routing.py — Dijkstra, A*, Bellman-Ford, ACO on NetworkX MultiDiGraph
-#
-# All algorithms accept:
-#   G         : networkx.MultiDiGraph  (OSMnx graph)
-#   orig_node : int  (OSM node id)
-#   dest_node : int  (OSM node id)
-#   weight    : str  (edge attribute to minimise, default 'length')
-#
-# All return:
-#   list[int]  — ordered node ids forming the path (empty on failure)
-
 import math
 import random
 import heapq
 import logging
-from typing import List, Optional
+from typing import List
 
 import networkx as nx
+
+from config import (
+    ACO_ANTS,
+    ACO_ITERATIONS,
+    ACO_ALPHA,
+    ACO_BETA,
+    ACO_EVAP,
+)
 
 logger = logging.getLogger(__name__)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Helpers
-# ─────────────────────────────────────────────────────────────────────────────
-
 def _edge_weight(G: nx.MultiDiGraph, u: int, v: int, weight: str = "length") -> float:
-    """Return minimum weight across parallel edges."""
     data = G.get_edge_data(u, v)
     if not data:
         return float("inf")
-    return min(
-        d.get(weight, d.get("length", float("inf")))
-        for d in data.values()
-    )
+    return min(d.get(weight, d.get("length", float("inf"))) for d in data.values())
 
-#heuristic function to estimate the straight-line distance between two points on the Earth's surface using latitude and longitude
+
 def _haversine(G: nx.MultiDiGraph, u: int, v: int) -> float:
-    """Great-circle distance in metres between two OSM nodes."""
-    R = 6_371_000
-    n1, n2 = G.nodes[u], G.nodes[v]
+    r = 6_371_000
+    n1 = G.nodes[u]
+    n2 = G.nodes[v]
     lat1, lon1 = math.radians(n1["y"]), math.radians(n1["x"])
     lat2, lon2 = math.radians(n2["y"]), math.radians(n2["x"])
-    dlat, dlon = lat2 - lat1, lon2 - lon1
-    a = math.sin(dlat / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
-    return R * 2 * math.asin(math.sqrt(a))
+    dlat = lat2 - lat1
+    dlon = lon2 - lon1
+    a = (
+        math.sin(dlat / 2) ** 2
+        + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
+    )
+    return r * 2 * math.asin(math.sqrt(a))
 
 
 def reconstruct_path(prev: dict, dest: int) -> List[int]:
@@ -56,22 +49,20 @@ def reconstruct_path(prev: dict, dest: int) -> List[int]:
     return path
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 1. Dijkstra
-# ─────────────────────────────────────────────────────────────────────────────
-
 def dijkstra(G: nx.MultiDiGraph, orig: int, dest: int, weight: str = "length") -> List[int]:
     dist = {orig: 0.0}
     prev = {orig: None}
-    pq   = [(0.0, orig)]
+    pq = [(0.0, orig)]
 
     while pq:
-        # d=current_cost, u=current_node
         d, u = heapq.heappop(pq)
+
         if u == dest:
             return reconstruct_path(prev, dest)
+
         if d > dist.get(u, float("inf")):
             continue
+
         for v in G.successors(u):
             w = _edge_weight(G, u, v, weight)
             nd = d + w
@@ -84,29 +75,28 @@ def dijkstra(G: nx.MultiDiGraph, orig: int, dest: int, weight: str = "length") -
     return []
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 2. A*
-# ─────────────────────────────────────────────────────────────────────────────
-
 def astar(G: nx.MultiDiGraph, orig: int, dest: int, weight: str = "length") -> List[int]:
-    def h(node):
-        return _haversine(G, node, dest)
+    def h(node_id: int) -> float:
+        return _haversine(G, node_id, dest)
 
-    g    = {orig: 0.0}
+    g_cost = {orig: 0.0}
     prev = {orig: None}
-    pq   = [(h(orig), 0.0, orig)]
+    pq = [(h(orig), 0.0, orig)]
 
     while pq:
-        _, cost, u = heapq.heappop(pq)
+        _, current_cost, u = heapq.heappop(pq)
+
         if u == dest:
             return reconstruct_path(prev, dest)
-        if cost > g.get(u, float("inf")):
+
+        if current_cost > g_cost.get(u, float("inf")):
             continue
+
         for v in G.successors(u):
-            w  = _edge_weight(G, u, v, weight)
-            ng = cost + w
-            if ng < g.get(v, float("inf")):
-                g[v]    = ng
+            w = _edge_weight(G, u, v, weight)
+            ng = current_cost + w
+            if ng < g_cost.get(v, float("inf")):
+                g_cost[v] = ng
                 prev[v] = u
                 heapq.heappush(pq, (ng + h(v), ng, v))
 
@@ -114,35 +104,29 @@ def astar(G: nx.MultiDiGraph, orig: int, dest: int, weight: str = "length") -> L
     return []
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 3. Bellman-Ford
-# ─────────────────────────────────────────────────────────────────────────────
-
 def bellman_ford(G: nx.MultiDiGraph, orig: int, dest: int, weight: str = "length") -> List[int]:
     nodes = list(G.nodes())
-    dist  = {n: float("inf") for n in nodes}
-    prev  = {n: None         for n in nodes}
+    dist = {n: float("inf") for n in nodes}
+    prev = {n: None for n in nodes}
     dist[orig] = 0.0
 
-    edges = [
-        (u, v, _edge_weight(G, u, v, weight))
-        for u in G.nodes()
-        for v in G.successors(u)
-    ]
+    edges = []
+    for u in G.nodes():
+        for v in G.successors(u):
+            edges.append((u, v, _edge_weight(G, u, v, weight)))
 
     for _ in range(len(nodes) - 1):
         updated = False
         for u, v, w in edges:
-            if dist[u] + w < dist[v]:
-                dist[v]  = dist[u] + w
-                prev[v]  = u
-                updated  = True
+            if dist[u] != float("inf") and dist[u] + w < dist[v]:
+                dist[v] = dist[u] + w
+                prev[v] = u
+                updated = True
         if not updated:
             break
 
-    # Negative-cycle check
     for u, v, w in edges:
-        if dist[u] + w < dist[v]:
+        if dist[u] != float("inf") and dist[u] + w < dist[v]:
             logger.warning("Bellman-Ford: negative cycle detected")
             return []
 
@@ -153,106 +137,91 @@ def bellman_ford(G: nx.MultiDiGraph, orig: int, dest: int, weight: str = "length
     return reconstruct_path(prev, dest)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 4. Ant Colony Optimisation (ACO)
-# ─────────────────────────────────────────────────────────────────────────────
-
 def aco(
     G: nx.MultiDiGraph,
     orig: int,
     dest: int,
-    weight:     str   = "length",
-    n_ants:     int   = 30,
-    n_iter:     int   = 50,
-    alpha:      float = 1.0,   # pheromone power
-    beta:       float = 2.0,   # heuristic power
-    evap:       float = 0.5,   # evaporation rate
-    q:          float = 100.0  # pheromone deposit constant
+    weight: str = "length",
+    n_ants: int = ACO_ANTS,
+    n_iter: int = ACO_ITERATIONS,
+    alpha: float = ACO_ALPHA,
+    beta: float = ACO_BETA,
+    evap: float = ACO_EVAP,
+    q: float = 100.0,
 ) -> List[int]:
-    """
-    Graph-based ACO.  Works on MultiDiGraph by treating each (u,v) pair as
-    one edge with the minimum weight across parallel edges.
-    """
-    nodes     = list(G.nodes())
-    node_idx  = {n: i for i, n in enumerate(nodes)}
-    N         = len(nodes)
-
-    # Initialise pheromone matrix (sparse via dict for memory efficiency)
-    tau: dict = {}
+    tau = {}
     for u in G.nodes():
         for v in G.successors(u):
             tau[(u, v)] = 1.0
 
-    best_path:   List[int] = []
-    best_length: float     = float("inf")
+    best_path = []
+    best_length = float("inf")
 
-    for iteration in range(n_iter):
-        all_paths:   List[List[int]] = []
-        all_lengths: List[float]     = []
+    for _ in range(n_iter):
+        all_paths = []
+        all_lengths = []
 
-        for _ in range(n_ants):
+        for _ant in range(n_ants):
             path, length = _aco_walk(G, orig, dest, weight, tau, alpha, beta)
             if path:
                 all_paths.append(path)
                 all_lengths.append(length)
                 if length < best_length:
                     best_length = length
-                    best_path   = path
+                    best_path = path
 
-        # Evaporate
-        for key in tau:
+        for key in list(tau.keys()):
             tau[key] *= (1 - evap)
 
-        # Deposit
         for path, length in zip(all_paths, all_lengths):
+            if length <= 0:
+                continue
             deposit = q / length
             for u, v in zip(path[:-1], path[1:]):
                 tau[(u, v)] = tau.get((u, v), 0.0) + deposit
 
     if not best_path:
         logger.warning("ACO: no path found")
+
     return best_path
 
 
 def _aco_walk(G, orig, dest, weight, tau, alpha, beta):
-    current  = orig
-    visited  = {orig}
-    path     = [orig]
-    length   = 0.0
+    current = orig
+    visited = {orig}
+    path = [orig]
+    length = 0.0
     max_steps = len(G.nodes()) * 2
 
     for _ in range(max_steps):
         if current == dest:
             return path, length
 
-        neighbours = [v for v in G.successors(current) if v not in visited]
-        if not neighbours:
-            return [], float("inf")   # dead end
+        neighbors = [v for v in G.successors(current) if v not in visited]
+        if not neighbors:
+            return [], float("inf")
 
-        # Probability proportional to tau^alpha * (1/dist)^beta
         scores = []
-        for v in neighbours:
-            w   = _edge_weight(G, current, v, weight)
-            ph  = tau.get((current, v), 1.0) ** alpha
-            eta = (1.0 / max(w, 1e-9)) ** beta
-            scores.append(ph * eta)
+        for v in neighbors:
+            w = _edge_weight(G, current, v, weight)
+            pher = tau.get((current, v), 1.0) ** alpha
+            heur = (1.0 / max(w, 1e-9)) ** beta
+            scores.append(pher * heur)
 
         total = sum(scores)
-        probs = [s / total for s in scores]
-        chosen = random.choices(neighbours, weights=probs, k=1)[0]
+        if total <= 0:
+            return [], float("inf")
 
-        w       = _edge_weight(G, current, chosen, weight)
+        chosen = random.choices(neighbors, weights=scores, k=1)[0]
+        w = _edge_weight(G, current, chosen, weight)
+
         length += w
         path.append(chosen)
         visited.add(chosen)
         current = chosen
 
-    return [], float("inf")   # did not reach dest
+    return [], float("inf")
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# 5. Bidirectional Dijkstra
-# ─────────────────────────────────────────────────────────────────────────────
 
 def bidirectional_dijkstra(
     G: nx.MultiDiGraph,
@@ -260,88 +229,73 @@ def bidirectional_dijkstra(
     dest: int,
     weight: str = "length",
 ) -> List[int]:
-    """
-    Bidirectional Dijkstra — searches from both ends simultaneously.
-    Stops when the frontiers meet, cutting the search space roughly in half.
-    Memory efficient on large graphs.
-    """
     if orig == dest:
         return [orig]
 
-    # Forward search structures
-    dist_f  = {orig: 0.0}
-    prev_f  = {orig: None}
-    pq_f    = [(0.0, orig)]
+    dist_f = {orig: 0.0}
+    prev_f = {orig: None}
+    pq_f = [(0.0, orig)]
 
-    # Backward search structures (search on reversed graph)
-    dist_b  = {dest: 0.0}
-    prev_b  = {dest: None}
-    pq_b    = [(0.0, dest)]
+    dist_b = {dest: 0.0}
+    prev_b = {dest: None}
+    pq_b = [(0.0, dest)]
 
-    visited_f: set = set()
-    visited_b: set = set()
+    visited_f = set()
+    visited_b = set()
 
-    best      = float("inf")
-    meeting   = None
+    best = float("inf")
+    meeting = None
 
-    def _check_meeting(node):
+    def update_meeting(node):
         nonlocal best, meeting
         if node in dist_f and node in dist_b:
             total = dist_f[node] + dist_b[node]
             if total < best:
-                best    = total
+                best = total
                 meeting = node
 
     while pq_f or pq_b:
-        # Alternate between forward and backward
         if pq_f:
             d, u = heapq.heappop(pq_f)
             if u not in visited_f:
                 visited_f.add(u)
-                _check_meeting(u)
-                if dist_f.get(u, float("inf")) <= d:
+                update_meeting(u)
+                if d <= dist_f.get(u, float("inf")):
                     for v in G.successors(u):
-                        w  = _edge_weight(G, u, v, weight)
+                        w = _edge_weight(G, u, v, weight)
                         nd = d + w
                         if nd < dist_f.get(v, float("inf")):
                             dist_f[v] = nd
                             prev_f[v] = u
                             heapq.heappush(pq_f, (nd, v))
-                            _check_meeting(v)
+                            update_meeting(v)
 
         if pq_b:
             d, u = heapq.heappop(pq_b)
             if u not in visited_b:
                 visited_b.add(u)
-                _check_meeting(u)
-                if dist_b.get(u, float("inf")) <= d:
-                    # Traverse reversed edges for backward search
+                update_meeting(u)
+                if d <= dist_b.get(u, float("inf")):
                     for v in G.predecessors(u):
-                        w  = _edge_weight(G, v, u, weight)
+                        w = _edge_weight(G, v, u, weight)
                         nd = d + w
                         if nd < dist_b.get(v, float("inf")):
                             dist_b[v] = nd
                             prev_b[v] = u
                             heapq.heappush(pq_b, (nd, v))
-                            _check_meeting(v)
+                            update_meeting(v)
 
-        # Termination condition — both frontiers have expanded
-        # past the best known meeting point
         top_f = pq_f[0][0] if pq_f else float("inf")
         top_b = pq_b[0][0] if pq_b else float("inf")
-        if top_f + top_b >= best and meeting is not None:
+        if meeting is not None and top_f + top_b >= best:
             break
 
     if meeting is None:
         logger.warning("Bidirectional Dijkstra: no path found")
         return []
 
-    return _merge_paths(prev_f, prev_b, orig, dest, meeting)
+    return _merge_paths(prev_f, prev_b, meeting)
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# 6. Bidirectional A*
-# ─────────────────────────────────────────────────────────────────────────────
 
 def bidirectional_astar(
     G: nx.MultiDiGraph,
@@ -349,11 +303,6 @@ def bidirectional_astar(
     dest: int,
     weight: str = "length",
 ) -> List[int]:
-    """
-    Bidirectional A* — heuristic-guided search from both ends.
-    Most memory-efficient algorithm for large geographic graphs.
-    Uses consistent average heuristic to guarantee optimality.
-    """
     if orig == dest:
         return [orig]
 
@@ -363,28 +312,26 @@ def bidirectional_astar(
     def h_backward(node):
         return _haversine(G, node, orig)
 
-    # Forward
-    g_f     = {orig: 0.0}
-    prev_f  = {orig: None}
-    pq_f    = [(h_forward(orig), 0.0, orig)]
+    g_f = {orig: 0.0}
+    prev_f = {orig: None}
+    pq_f = [(h_forward(orig), 0.0, orig)]
 
-    # Backward
-    g_b     = {dest: 0.0}
-    prev_b  = {dest: None}
-    pq_b    = [(h_backward(dest), 0.0, dest)]
+    g_b = {dest: 0.0}
+    prev_b = {dest: None}
+    pq_b = [(h_backward(dest), 0.0, dest)]
 
-    visited_f: set = set()
-    visited_b: set = set()
+    visited_f = set()
+    visited_b = set()
 
-    best    = float("inf")
+    best = float("inf")
     meeting = None
 
-    def _update_best(node):
+    def update_meeting(node):
         nonlocal best, meeting
         if node in g_f and node in g_b:
             total = g_f[node] + g_b[node]
             if total < best:
-                best    = total
+                best = total
                 meeting = node
 
     while pq_f or pq_b:
@@ -392,91 +339,70 @@ def bidirectional_astar(
             _, cost, u = heapq.heappop(pq_f)
             if u not in visited_f:
                 visited_f.add(u)
-                _update_best(u)
+                update_meeting(u)
                 if cost <= g_f.get(u, float("inf")):
                     for v in G.successors(u):
-                        w  = _edge_weight(G, u, v, weight)
+                        w = _edge_weight(G, u, v, weight)
                         ng = cost + w
                         if ng < g_f.get(v, float("inf")):
-                            g_f[v]    = ng
+                            g_f[v] = ng
                             prev_f[v] = u
-                            f = ng + h_forward(v)
-                            heapq.heappush(pq_f, (f, ng, v))
-                            _update_best(v)
+                            heapq.heappush(pq_f, (ng + h_forward(v), ng, v))
+                            update_meeting(v)
 
         if pq_b:
             _, cost, u = heapq.heappop(pq_b)
             if u not in visited_b:
                 visited_b.add(u)
-                _update_best(u)
+                update_meeting(u)
                 if cost <= g_b.get(u, float("inf")):
                     for v in G.predecessors(u):
-                        w  = _edge_weight(G, v, u, weight)
+                        w = _edge_weight(G, v, u, weight)
                         ng = cost + w
                         if ng < g_b.get(v, float("inf")):
-                            g_b[v]    = ng
+                            g_b[v] = ng
                             prev_b[v] = u
-                            f = ng + h_backward(v)
-                            heapq.heappush(pq_b, (f, ng, v))
-                            _update_best(v)
+                            heapq.heappush(pq_b, (ng + h_backward(v), ng, v))
+                            update_meeting(v)
 
-        # Termination — prune when frontiers exceed best path
         top_f = pq_f[0][1] if pq_f else float("inf")
         top_b = pq_b[0][1] if pq_b else float("inf")
-        if top_f + top_b >= best and meeting is not None:
+        if meeting is not None and top_f + top_b >= best:
             break
 
     if meeting is None:
         logger.warning("Bidirectional A*: no path found")
         return []
 
-    return _merge_paths(prev_f, prev_b, orig, dest, meeting)
+    return _merge_paths(prev_f, prev_b, meeting)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Path merger helper (used by both bidirectional algorithms)
-# ─────────────────────────────────────────────────────────────────────────────
-
-def _merge_paths(
-    prev_f: dict,
-    prev_b: dict,
-    orig:   int,
-    dest:   int,
-    meeting: int,
-) -> List[int]:
-    """
-    Reconstruct full path by joining forward and backward traces
-    at the meeting node.
-    """
-    # Forward path: orig → meeting
+def _merge_paths(prev_f: dict, prev_b: dict, meeting: int) -> List[int]:
     path_f = []
-    node   = meeting
+    node = meeting
     while node is not None:
         path_f.append(node)
         node = prev_f.get(node)
     path_f.reverse()
 
-    # Backward path: meeting → dest
     path_b = []
-    node   = prev_b.get(meeting)   # skip meeting node, already in path_f
+    node = prev_b.get(meeting)
     while node is not None:
         path_b.append(node)
         node = prev_b.get(node)
 
     return path_f + path_b
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Dispatcher
-# ─────────────────────────────────────────────────────────────────────────────
 
 ALGO_MAP = {
-    "dijkstra":              dijkstra,
-    "a*":                    astar,
-    "bellman-ford":          bellman_ford,
-    "aco":                   aco,
+    "dijkstra": dijkstra,
+    "a*": astar,
+    "bellman-ford": bellman_ford,
+    "aco": aco,
     "bidirectional dijkstra": bidirectional_dijkstra,
-    "bidirectional a*":       bidirectional_astar,
+    "bidirectional a*": bidirectional_astar,
 }
+
 
 def find_path(
     G: nx.MultiDiGraph,
@@ -485,13 +411,29 @@ def find_path(
     algorithm: str = "A*",
     weight: str = "length",
 ) -> List[int]:
-    # Normalise key — map UI labels to algo map keys
     label_map = {
-        "bi-dijkstra":          "bidirectional dijkstra",
-        "bi-a*":                "bidirectional a*",
-        "bidirectional a*":     "bidirectional a*",
+        "bi-dijkstra": "bidirectional dijkstra",
+        "bi-a*": "bidirectional a*",
         "bidirectional dijkstra": "bidirectional dijkstra",
+        "bidirectional a*": "bidirectional a*",
     }
+
     key = algorithm.lower()
     key = label_map.get(key, key)
-    fn  = ALGO_MAP.get(key)
+
+    fn = ALGO_MAP.get(key)
+    if fn is None:
+        raise ValueError(f"Unknown algorithm: {algorithm}")
+
+    if G is None:
+        return []
+
+    if orig not in G or dest not in G:
+        logger.warning("find_path: origin or destination node missing from graph")
+        return []
+
+    if orig == dest:
+        return [orig]
+
+    return fn(G, orig, dest, weight=weight)
+
