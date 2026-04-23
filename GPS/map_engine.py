@@ -104,6 +104,10 @@ class GraphLoader:
                     self.G_full = G_full
                 if on_done:
                     on_done(G_full)
+                # Memory check after load
+                import resource
+                ram_mb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
+                print(f"[WORKER] RAM after load: {ram_mb:.0f} MB")
             except Exception as e:
                 import traceback
                 traceback.print_exc()
