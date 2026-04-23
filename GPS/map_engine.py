@@ -77,7 +77,7 @@ class Viewport:
         scale_w = self.w / width_m if width_m else 1.0
 
         self._base_scale = min(scale_h, scale_w) * 0.85
-        self.zoom = 1.0
+        self.zoom = 1.6
 
     def geo_to_canvas(self, lat: float, lon: float) -> Tuple[float, float]:
         m_per_deg_lat = 111_320
