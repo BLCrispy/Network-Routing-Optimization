@@ -3,7 +3,7 @@ import networkx as nx
 
 def get_graph(place_name):
     """Download a street network graph for a place."""
-    G = ox.graph_from_place(place_name, network_type="walk")
+    G = ox.graph_from_place(place_name, network_type="drive")
     return G
 
 # --- Calculate total travel time ---
