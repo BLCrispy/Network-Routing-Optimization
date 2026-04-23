@@ -440,4 +440,3 @@ class MapRenderer:
         self.canvas.create_text(cx, cy, text=symbol,
             fill="white", font=("TkDefaultFont", 9, "bold"),
             tags=self._tag)
-ENDOFFILE
