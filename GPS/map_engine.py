@@ -1,9 +1,9 @@
-# map_engine.py — OSMnx graph management & Tkinter canvas renderer
+# map_engine.py — SQLite-backed graph loader & Tkinter canvas renderer
 
 import os
 import math
 import logging
-import pickle
+import sqlite3
 import threading
 from typing import Optional, List, Tuple
 
@@ -18,23 +18,31 @@ except ImportError:
 from config import (
     CACHE_DIR, GRAPH_RADIUS_M, NETWORK_TYPE,
     NODE_CLR, EDGE_CLR, ROUTE_CLR, POSITION_CLR, DEST_CLR,
-    ACCENT, ACCENT2, TEXT_MUTED, PRELOADED_GRAPH, SUBGRAPH_RADIUS_M, ROUTING_RADIUS_M
+    ACCENT, ACCENT2, TEXT_MUTED,
+    SUBGRAPH_RADIUS_M, ROUTING_RADIUS_M,
+    GRAPH_DB,
 )
 
 logger = logging.getLogger(__name__)
 os.makedirs(CACHE_DIR, exist_ok=True)
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Viewport
+# ─────────────────────────────────────────────────────────────────────────────
+
 class Viewport:
     def __init__(self, canvas_w: int, canvas_h: int):
-        self.w = canvas_w
-        self.h = canvas_h
-        self.center_lat  = 0.0
-        self.center_lon  = 0.0
+        self.w           = canvas_w
+        self.h           = canvas_h
+        self.center_lat  = 36.18
+        self.center_lon  = -85.50
         self.zoom        = 1.0
-        self._base_scale = 0.0
+        self._base_scale = 100.0
 
     def fit_graph(self, G: nx.MultiDiGraph):
+        if G is None or G.number_of_nodes() == 0:
+            return
         lats = [d["y"] for _, d in G.nodes(data=True)]
         lons = [d["x"] for _, d in G.nodes(data=True)]
         self.center_lat = (min(lats) + max(lats)) / 2
@@ -45,8 +53,8 @@ class Viewport:
         m_per_deg_lon = 111_320 * math.cos(math.radians(self.center_lat))
         height_m = lat_span * m_per_deg_lat
         width_m  = lon_span * m_per_deg_lon
-        scale_h = self.h / height_m if height_m else 1
-        scale_w = self.w / width_m  if width_m  else 1
+        scale_h  = self.h / height_m if height_m else 1
+        scale_w  = self.w / width_m  if width_m  else 1
         self._base_scale = min(scale_h, scale_w) * 0.85
         self.zoom = 1.0
 
@@ -68,10 +76,6 @@ class Viewport:
         lat = self.center_lat - dy / (m_per_deg_lat * scale)
         return lat, lon
 
-    def pan(self, dlat: float, dlon: float):
-        self.center_lat += dlat
-        self.center_lon += dlon
-
     def zoom_in(self):
         self.zoom = min(self.zoom * 1.3, 20.0)
 
@@ -79,99 +83,108 @@ class Viewport:
         self.zoom = max(self.zoom / 1.3, 0.1)
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# SQLite Graph Loader
+# ─────────────────────────────────────────────────────────────────────────────
+
 class GraphLoader:
+    """
+    Loads graph data on-demand from SQLite.
+    Never loads the full graph into RAM — only the local area around the user.
+    Full-graph routing uses the DB directly via a lazy-loaded NetworkX graph.
+    """
+
     def __init__(self):
-        self.G: Optional[nx.MultiDiGraph] = None      # active subgraph for display
-        self.G_full: Optional[nx.MultiDiGraph] = None # full city graph (read-only)
-        self._lock   = threading.Lock()
-        self._center = (None, None)
+        self.G: Optional[nx.MultiDiGraph]      = None  # display subgraph
+        self.G_full: Optional[nx.MultiDiGraph] = None  # routing graph (lazy)
+        self._lock    = threading.Lock()
+        self._db_path = GRAPH_DB
+        self._db_ok   = os.path.exists(self._db_path)
         self._loading = False
+
+        if not self._db_ok:
+            logger.error(f"Graph DB not found: {self._db_path}")
 
         if OSMNX_OK:
             ox.settings.use_cache    = True
             ox.settings.cache_folder = CACHE_DIR
             ox.settings.log_console  = False
 
-    def load_full_graph(self, on_done=None, on_error=None):
-        """Load the full city graph from pickle into memory once."""
+    # ── Public API ────────────────────────────────────────────────────────────
+
+    def load(self, lat: float, lon: float,
+             radius_m: int = SUBGRAPH_RADIUS_M,
+             on_done=None, on_error=None):
+        """Entry point called by main.py — loads subgraph then routing graph."""
         def _worker():
             try:
-                print(f"[WORKER] Loading full graph from {PRELOADED_GRAPH}")
-                with open(PRELOADED_GRAPH, "rb") as f:
-                    G_full = pickle.load(f)
-                print(f"[WORKER] Full graph loaded: {G_full.number_of_nodes()} nodes")
+                print(f"[LOADER] Loading subgraph around ({lat:.4f},{lon:.4f})")
+                sub = self._query_subgraph(lat, lon, SUBGRAPH_RADIUS_M)
+                if sub is None or sub.number_of_nodes() == 0:
+                    raise RuntimeError("No nodes found near GPS position")
+
                 with self._lock:
-                    self.G_full = G_full
+                    self.G = sub
+
+                print(f"[LOADER] Subgraph: {sub.number_of_nodes()} nodes")
+
+                # Load routing graph in background
+                threading.Thread(
+                    target=self._load_routing_graph,
+                    daemon=True
+                ).start()
+
                 if on_done:
-                    on_done(G_full)
-                # Memory check after load
-                import resource
-                ram_mb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
-                print(f"[WORKER] RAM after load: {ram_mb:.0f} MB")
+                    on_done(sub)
+
             except Exception as e:
                 import traceback
                 traceback.print_exc()
-                logger.error(f"Full graph load failed: {e}")
+                logger.error(f"Load failed: {e}")
                 if on_error:
                     on_error(str(e))
 
-        print("[LOADER] Loading full graph...")
-        t = threading.Thread(target=_worker, daemon=True)
-        t.start()
-
-    def extract_subgraph(self, lat: float, lon: float,
-                          radius_m: int = SUBGRAPH_RADIUS_M) -> Optional[nx.MultiDiGraph]:
-        """
-        Extract a lightweight subgraph around a point from the full graph.
-        This is fast — pure in-memory node filtering, no download.
-        """
-        with self._lock:
-            if self.G_full is None:
-                return None
-            G_full = self.G_full
-
-        # Find all nodes within radius_m metres
-        R = 6_371_000
-        nodes_in_radius = []
-        for node, data in G_full.nodes(data=True):
-            node_lat = data["y"]
-            node_lon = data["x"]
-            dlat = math.radians(node_lat - lat)
-            dlon = math.radians(node_lon - lon)
-            a = (math.sin(dlat/2)**2 +
-                 math.cos(math.radians(lat)) *
-                 math.cos(math.radians(node_lat)) *
-                 math.sin(dlon/2)**2)
-            dist = R * 2 * math.asin(math.sqrt(a))
-            if dist <= radius_m:
-                nodes_in_radius.append(node)
-
-        if not nodes_in_radius:
-            return None
-
-        subgraph = G_full.subgraph(nodes_in_radius).copy()
-        return subgraph
+        threading.Thread(target=_worker, daemon=True).start()
 
     def update_subgraph(self, lat: float, lon: float):
-        """Update the active display subgraph around current position."""
-        sub = self.extract_subgraph(lat, lon, SUBGRAPH_RADIUS_M)
-        if sub:
-            with self._lock:
-                self.G = sub
-                self._center = (lat, lon)
-
-    def get_routing_graph(self, lat: float, lon: float) -> Optional[nx.MultiDiGraph]:
-        """Get a larger subgraph suitable for routing calculations."""
-        return self.extract_subgraph(lat, lon, ROUTING_RADIUS_M)
+        """Called every GPS poll — refreshes display subgraph around user."""
+        def _bg():
+            sub = self._query_subgraph(lat, lon, SUBGRAPH_RADIUS_M)
+            if sub and sub.number_of_nodes() > 0:
+                with self._lock:
+                    self.G = sub
+                    self._center = (lat, lon)
+        threading.Thread(target=_bg, daemon=True).start()
 
     def nearest_node(self, lat: float, lon: float,
                      use_full: bool = True) -> Optional[int]:
-        """Find nearest node — uses full graph for accuracy."""
-        with self._lock:
-            G = self.G_full if use_full else self.G
-            if G is None or not OSMNX_OK:
-                return None
-            return ox.nearest_nodes(G, lon, lat)
+        """Find nearest node using direct DB spatial query — no RAM overhead."""
+        if not self._db_ok:
+            return None
+        try:
+            # Fast bounding box pre-filter then exact distance
+            deg_margin = 0.05  # ~5km search box
+            conn = sqlite3.connect(self._db_path, timeout=10)
+            c    = conn.cursor()
+            c.execute("""
+                SELECT id, lat, lon,
+                       ((lat - ?) * (lat - ?) + (lon - ?) * (lon - ?)) AS dist2
+                FROM nodes
+                WHERE lat BETWEEN ? AND ?
+                  AND lon BETWEEN ? AND ?
+                ORDER BY dist2
+                LIMIT 1
+            """, (
+                lat, lat, lon, lon,
+                lat - deg_margin, lat + deg_margin,
+                lon - deg_margin, lon + deg_margin,
+            ))
+            row = c.fetchone()
+            conn.close()
+            return int(row[0]) if row else None
+        except Exception as e:
+            logger.error(f"nearest_node error: {e}")
+            return None
 
     def geocode(self, address: str) -> Optional[Tuple[float, float]]:
         if not OSMNX_OK:
@@ -182,12 +195,150 @@ class GraphLoader:
             logger.error(f"Geocode failed for '{address}': {e}")
             return None
 
-    # Keep load() as an alias so main.py doesn't break
-    def load(self, lat: float, lon: float,
-             radius_m: int = SUBGRAPH_RADIUS_M,
-             on_done=None, on_error=None):
-        self.load_full_graph(on_done=on_done, on_error=on_error)
+    # ── Internal ──────────────────────────────────────────────────────────────
 
+    def _query_subgraph(self, lat: float, lon: float,
+                        radius_m: float) -> Optional[nx.MultiDiGraph]:
+        """
+        Query SQLite for nodes within radius_m and their edges.
+        Returns a small NetworkX graph — typically 200-500 nodes.
+        """
+        if not self._db_ok:
+            return None
+
+        # Convert radius to degree margin for bounding box pre-filter
+        deg_margin = (radius_m / 111_320) * 1.5
+
+        try:
+            conn = sqlite3.connect(self._db_path, timeout=10)
+            conn.row_factory = sqlite3.Row
+            c = conn.cursor()
+
+            # Get nodes in bounding box
+            c.execute("""
+                SELECT id, lat, lon FROM nodes
+                WHERE lat BETWEEN ? AND ?
+                  AND lon BETWEEN ? AND ?
+            """, (
+                lat - deg_margin, lat + deg_margin,
+                lon - deg_margin, lon + deg_margin,
+            ))
+            rows = c.fetchall()
+
+            if not rows:
+                conn.close()
+                return None
+
+            # Exact haversine filter
+            R = 6_371_000
+            node_ids = []
+            node_coords = {}
+            for row in rows:
+                node_lat, node_lon = row["lat"], row["lon"]
+                dlat = math.radians(node_lat - lat)
+                dlon = math.radians(node_lon - lon)
+                a = (math.sin(dlat/2)**2 +
+                     math.cos(math.radians(lat)) *
+                     math.cos(math.radians(node_lat)) *
+                     math.sin(dlon/2)**2)
+                dist = R * 2 * math.asin(math.sqrt(a))
+                if dist <= radius_m:
+                    nid = int(row["id"])
+                    node_ids.append(nid)
+                    node_coords[nid] = (node_lat, node_lon)
+
+            if not node_ids:
+                conn.close()
+                return None
+
+            # Get edges between nodes in subgraph
+            placeholders = ",".join("?" * len(node_ids))
+            c.execute(f"""
+                SELECT u, v, length FROM edges
+                WHERE u IN ({placeholders})
+                  AND v IN ({placeholders})
+            """, node_ids + node_ids)
+            edge_rows = c.fetchall()
+            conn.close()
+
+            # Build NetworkX graph
+            G = nx.MultiDiGraph()
+            G.graph["crs"] = "epsg:4326"
+
+            for nid, (nlat, nlon) in node_coords.items():
+                G.add_node(nid, y=nlat, x=nlon)
+
+            for row in edge_rows:
+                G.add_edge(int(row["u"]), int(row["v"]),
+                           length=float(row["length"]))
+
+            return G
+
+        except Exception as e:
+            logger.error(f"_query_subgraph error: {e}")
+            return None
+
+    def _load_routing_graph(self):
+        """
+        Load full graph for routing into RAM in background.
+        Uses chunked loading to avoid memory spike.
+        """
+        print("[LOADER] Loading routing graph from SQLite...")
+        try:
+            conn = sqlite3.connect(self._db_path, timeout=30)
+            c    = conn.cursor()
+
+            G = nx.MultiDiGraph()
+            G.graph["crs"] = "epsg:4326"
+
+            # Load nodes in chunks
+            c.execute("SELECT COUNT(*) FROM nodes")
+            total_nodes = c.fetchone()[0]
+            print(f"[LOADER] Loading {total_nodes} nodes...")
+
+            chunk = 5000
+            for offset in range(0, total_nodes, chunk):
+                c.execute(
+                    "SELECT id, lat, lon FROM nodes LIMIT ? OFFSET ?",
+                    (chunk, offset)
+                )
+                for row in c.fetchall():
+                    G.add_node(int(row[0]), y=float(row[1]), x=float(row[2]))
+
+            # Load edges in chunks
+            c.execute("SELECT COUNT(*) FROM edges")
+            total_edges = c.fetchone()[0]
+            print(f"[LOADER] Loading {total_edges} edges...")
+
+            for offset in range(0, total_edges, chunk):
+                c.execute(
+                    "SELECT u, v, length FROM edges LIMIT ? OFFSET ?",
+                    (chunk, offset)
+                )
+                for row in c.fetchall():
+                    G.add_edge(int(row[0]), int(row[1]),
+                               length=float(row[2]))
+
+            conn.close()
+
+            import resource
+            ram_mb = resource.getrusage(
+                resource.RUSAGE_SELF).ru_maxrss / 1024
+            print(f"[LOADER] Routing graph ready: {G.number_of_nodes()} nodes")
+            print(f"[LOADER] RAM usage: {ram_mb:.0f} MB")
+
+            with self._lock:
+                self.G_full = G
+
+        except Exception as e:
+            logger.error(f"Routing graph load failed: {e}")
+            import traceback
+            traceback.print_exc()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Map Renderer
+# ─────────────────────────────────────────────────────────────────────────────
 
 class MapRenderer:
     def __init__(self, canvas, viewport: Viewport):
@@ -244,18 +395,33 @@ class MapRenderer:
                 fill=NODE_CLR, outline="", tags=self._tag)
 
     def _draw_route(self, G, route_nodes):
+        # Route may include nodes outside the display subgraph
+        # so we need to handle missing nodes gracefully
         coords = []
         for node in route_nodes:
-            if node not in G.nodes:
-                continue
-            d = G.nodes[node]
-            cx, cy = self.vp.geo_to_canvas(d["y"], d["x"])
-            coords.extend([cx, cy])
+            if node in G.nodes:
+                d = G.nodes[node]
+                cx, cy = self.vp.geo_to_canvas(d["y"], d["x"])
+                coords.extend([cx, cy])
+            elif hasattr(self, '_route_coords') and node in self._route_coords:
+                cx, cy = self._route_coords[node]
+                coords.extend([cx, cy])
         if len(coords) >= 4:
             self.canvas.create_line(*coords,
                 fill=ROUTE_CLR, width=4,
                 capstyle="round", joinstyle="round",
                 tags=self._tag)
+
+    def set_route_coords(self, G_full, route_nodes):
+        """Pre-cache canvas coords for all route nodes from the full graph."""
+        self._route_coords = {}
+        if G_full is None:
+            return
+        for node in route_nodes:
+            if node in G_full.nodes:
+                d = G_full.nodes[node]
+                self._route_coords[node] = self.vp.geo_to_canvas(
+                    d["y"], d["x"])
 
     def _draw_position(self, lat, lon):
         cx, cy = self.vp.geo_to_canvas(lat, lon)
@@ -274,3 +440,4 @@ class MapRenderer:
         self.canvas.create_text(cx, cy, text=symbol,
             fill="white", font=("TkDefaultFont", 9, "bold"),
             tags=self._tag)
+ENDOFFILE

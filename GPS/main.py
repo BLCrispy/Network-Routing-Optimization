@@ -603,7 +603,18 @@ class PiGPSApp:
 
                 t0    = time.time()
                 # Route on full graph for complete city coverage
+                # Wait up to 30s for routing graph to be ready
+                import time as _time
+                waited = 0
+                while self.loader.G_full is None and waited < 30:
+                    _time.sleep(1)
+                    waited += 1
+
                 route_graph = self.loader.G_full or self.loader.G
+                if route_graph is None:
+                    self.root.after(0, lambda: self._set_status(
+                        "Routing graph not ready yet.", "error"))
+                    return
                 path = find_path(route_graph, orig_node, dest_node, algorithm=algo)
                 t_ms  = (time.time() - t0) * 1000
 
@@ -619,6 +630,7 @@ class PiGPSApp:
 
                 def _apply():
                     self.route_nodes      = path
+                    self.renderer.set_route_coords(self.loader.G_full, path)
                     self.dest_latlon      = (d_lat, d_lon)
                     self.dest_node        = dest_node
                     self._last_reroute_pos = (lat, lon)
