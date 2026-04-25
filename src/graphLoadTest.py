@@ -4,9 +4,20 @@ import math
 import matplotlib.pyplot as plt
 import myAlgorithms as ma
 import graph_utils as gu
+import os
+
+# 1. Get the directory of the current script (e.g., /project/src)
+current_dir = os.path.dirname(os.path.abspath(__file__))
+
+# 2. Go up one level to the main repo folder
+repo_root = os.path.dirname(current_dir)
+
+# 3. Construct path to graph file in another directory (e.g., /project/data)
+graph_path = os.path.join(repo_root, 'GraphML_Archive', 'New York City_NY_USA.graphml')
+
 
 # --- Load and prepare graph ---
-G = ox.load_graphml('New York City_NY_USA.graphml')
+G = ox.load_graphml(graph_path)
 G = ox.add_edge_speeds(G)
 G = ox.add_edge_travel_times(G)
 G_projected = ox.project_graph(G) # Projecting graphs converts graph from (lat/lon) to MultiDiGraph
