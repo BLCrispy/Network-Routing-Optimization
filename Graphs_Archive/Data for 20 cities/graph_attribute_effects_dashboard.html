@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Graph Attribute Effects Dashboard</title>
+</head>
+<body style="margin:0;background:#f4f6f8;color:#14202b;font-family:Segoe UI, Arial, sans-serif;">
+<h2 class="sr-only">Directed comparison of graph attributes against runtime and memory for Dijkstra, A*, Bellman-Ford, and ACO across 20 city road networks.</h2>
+
+<style>
+:root{--color-background:#ffffff;--color-background-secondary:#eef2f6;--color-border-secondary:#c7d0da;--color-border-tertiary:#d7dfe7;--color-text-primary:#14202b;--color-text-secondary:#4b6175;--color-text-tertiary:#71859a;--border-radius-md:14px;--font-mono:Consolas, "Courier New", monospace;}
+body{background:radial-gradient(circle at top left,#f8fbff 0,#eef3f7 42%,#e8edf2 100%);}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;}
+.shell{max-width:1380px;margin:0 auto;padding:28px 20px 40px;}
+.hero{margin-bottom:18px;padding:20px 22px;border-radius:22px;background:linear-gradient(135deg,#ffffff 0,#f1f5f8 55%,#eaf2fb 100%);box-shadow:0 18px 46px rgba(15,33,52,0.08);border:1px solid rgba(91,117,143,0.12);}
+.eyebrow{font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:#5d7792;margin-bottom:8px;}
+.hero h1{margin:0;font-size:30px;line-height:1.1;font-weight:650;color:#112033;}
+.hero p{margin:10px 0 0;font-size:14px;line-height:1.6;color:#50657a;max-width:980px;}
+.tabs{display:flex;gap:4px;margin-bottom:16px;flex-wrap:wrap;}
+.tab{padding:6px 14px;border-radius:var(--border-radius-md);border:0.5px solid var(--color-border-secondary);cursor:pointer;font-size:13px;background:transparent;color:var(--color-text-secondary);}
+.tab.active{background:var(--color-background-secondary);color:var(--color-text-primary);font-weight:500;}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--color-text-secondary);margin-bottom:12px;}
+.leg{display:flex;align-items:center;gap:5px;}
+.leg-sq{width:10px;height:10px;border-radius:2px;}
+.metric-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-bottom:16px;}
+.metric{background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:10px 12px;}
+.metric-label{font-size:11px;color:var(--color-text-tertiary);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px;}
+.metric-val{font-size:20px;font-weight:500;color:var(--color-text-primary);}
+.metric-sub{font-size:11px;color:var(--color-text-secondary);margin-top:2px;}
+.section-title{font-size:13px;font-weight:600;color:var(--color-text-secondary);margin:20px 0 8px;letter-spacing:.02em;}
+.note{font-size:12px;color:var(--color-text-tertiary);margin-top:8px;line-height:1.5;}
+.chart-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:14px;}
+.chart-card{background:rgba(255,255,255,0.75);border:1px solid rgba(91,117,143,0.12);border-radius:18px;padding:14px 14px 10px;box-shadow:0 10px 28px rgba(15,33,52,0.05);}
+.chart-card h3{margin:0 0 8px;font-size:14px;color:var(--color-text-primary);}
+.chart-box{position:relative;width:100%;height:260px;}
+.formula-box{background:var(--color-background-secondary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:12px 16px;margin-bottom:12px;font-size:13px;line-height:1.6;}
+.formula-box code{font-family:var(--font-mono);font-size:12px;color:var(--color-text-secondary);}
+.table-wrap{overflow:auto;background:rgba(255,255,255,0.78);border:1px solid rgba(91,117,143,0.12);border-radius:16px;box-shadow:0 10px 28px rgba(15,33,52,0.05);}
+.corr-table{width:100%;border-collapse:collapse;font-size:12px;}
+.corr-table th,.corr-table td{padding:10px 12px;border-bottom:1px solid rgba(91,117,143,0.12);text-align:center;}
+.corr-table th{background:#eef4f8;color:#334a5f;font-weight:600;position:sticky;top:0;}
+.corr-table tbody tr:last-child td,.corr-table tbody tr:last-child th{border-bottom:0;}
+.corr-table tbody th{text-align:left;background:#f8fbfd;color:#203243;}
+</style>
+
+<div class="shell">
+  <div class="hero">
+    <div class="eyebrow">OSM routing experiment</div>
+    <h1>Directed Graph Attribute Comparison</h1>
+    <p>This version is focused specifically on how <strong>node count</strong>, <strong>edge count</strong>, <strong>average degree</strong>, <strong>circuity avg</strong>, and <strong>intersection count</strong> affect <strong>runtime</strong> and <strong>memory usage</strong> for <strong>Dijkstra</strong>, <strong>A*</strong>, <strong>Bellman-Ford</strong>, and <strong>ACO</strong>.</p>
+  </div>
+
+  <div class="tabs">
+    <button class="tab active" onclick="setTab('runtime')">Runtime by Attribute</button>
+    <button class="tab" onclick="setTab('memory')">Memory by Attribute</button>
+    <button class="tab" onclick="setTab('summary')">Summary &amp; Formulas</button>
+  </div>
+
+  <div id="pane-runtime">
+    <div class="legend">
+      <span class="leg"><span class="leg-sq" style="background:#3266ad;"></span>Dijkstra</span>
+      <span class="leg"><span class="leg-sq" style="background:#2a9d6f;"></span>A*</span>
+      <span class="leg"><span class="leg-sq" style="background:#c05c28;"></span>Bellman-Ford</span>
+      <span class="leg"><span class="leg-sq" style="background:#8b4fbf;"></span>ACO</span>
+    </div>
+    <div class="metric-grid">
+      <div class="metric"><div class="metric-label">Cities</div><div class="metric-val">20</div><div class="metric-sub">successful city graphs</div></div>
+      <div class="metric"><div class="metric-label">Runtime view</div><div class="metric-val">5 attributes</div><div class="metric-sub">all algorithms overlaid</div></div>
+      <div class="metric"><div class="metric-label">ACO sample</div><div class="metric-val">6</div><div class="metric-sub">successful runs only</div></div>
+      <div class="metric"><div class="metric-label">Runtime scale</div><div class="metric-val">log y</div><div class="metric-sub">to keep ACO visible with exact solvers</div></div>
+    </div>
+    <div class="chart-grid">
+      <div class="chart-card"><h3>Node Count vs Runtime</h3><div class="chart-box"><canvas id="rtNodes"></canvas></div></div>
+      <div class="chart-card"><h3>Edge Count vs Runtime</h3><div class="chart-box"><canvas id="rtEdges"></canvas></div></div>
+      <div class="chart-card"><h3>Average Degree vs Runtime</h3><div class="chart-box"><canvas id="rtDegree"></canvas></div></div>
+      <div class="chart-card"><h3>Circuity Avg vs Runtime</h3><div class="chart-box"><canvas id="rtCircuity"></canvas></div></div>
+      <div class="chart-card"><h3>Intersection Count vs Runtime</h3><div class="chart-box"><canvas id="rtIntersections"></canvas></div></div>
+    </div>
+    <p class="note">Node count, edge count, and intersection count are size proxies, so runtime panels for those three attributes are expected to look similar. Bellman-Ford and Dijkstra show the strongest positive size response; A* is flatter; ACO is descriptive only because it has few successful runs.</p>
+  </div>
+
+  <div id="pane-memory" style="display:none;">
+    <div class="legend">
+      <span class="leg"><span class="leg-sq" style="background:#3266ad;"></span>Dijkstra</span>
+      <span class="leg"><span class="leg-sq" style="background:#2a9d6f;"></span>A*</span>
+      <span class="leg"><span class="leg-sq" style="background:#c05c28;"></span>Bellman-Ford</span>
+      <span class="leg"><span class="leg-sq" style="background:#8b4fbf;"></span>ACO</span>
+    </div>
+    <div class="metric-grid">
+      <div class="metric"><div class="metric-label">Memory view</div><div class="metric-val">5 attributes</div><div class="metric-sub">same attribute set as runtime</div></div>
+      <div class="metric"><div class="metric-label">Memory unit</div><div class="metric-val">MB</div><div class="metric-sub">from experiment CSV</div></div>
+      <div class="metric"><div class="metric-label">Strongest size link</div><div class="metric-val">Edge Count</div><div class="metric-sub">highest average |r| among size proxies</div></div>
+      <div class="metric"><div class="metric-label">CSV rows loaded</div><div class="metric-val">80 + 87</div><div class="metric-sub">city table + route-results table</div></div>
+    </div>
+    <div class="chart-grid">
+      <div class="chart-card"><h3>Node Count vs Memory</h3><div class="chart-box"><canvas id="memNodes"></canvas></div></div>
+      <div class="chart-card"><h3>Edge Count vs Memory</h3><div class="chart-box"><canvas id="memEdges"></canvas></div></div>
+      <div class="chart-card"><h3>Average Degree vs Memory</h3><div class="chart-box"><canvas id="memDegree"></canvas></div></div>
+      <div class="chart-card"><h3>Circuity Avg vs Memory</h3><div class="chart-box"><canvas id="memCircuity"></canvas></div></div>
+      <div class="chart-card"><h3>Intersection Count vs Memory</h3><div class="chart-box"><canvas id="memIntersections"></canvas></div></div>
+    </div>
+    <p class="note">Memory is much more tightly linked to graph size than to degree or circuity. In this dataset, size-driven memory growth is visible across all algorithms, including A* and Bellman-Ford.</p>
+  </div>
+
+  <div id="pane-summary" style="display:none;">
+    <div class="metric-grid">
+      <div class="metric"><div class="metric-label">Node range</div><div class="metric-val">1,759-34,582</div><div class="metric-sub">graph nodes</div></div>
+      <div class="metric"><div class="metric-label">Edge range</div><div class="metric-val">4,641-80,194</div><div class="metric-sub">graph edges</div></div>
+      <div class="metric"><div class="metric-label">Avg degree range</div><div class="metric-val">4.638-5.515</div><div class="metric-sub">narrow spread</div></div>
+      <div class="metric"><div class="metric-label">Circuity range</div><div class="metric-val">1.046-1.110</div><div class="metric-sub">narrow spread</div></div>
+      <div class="metric"><div class="metric-label">Intersection range</div><div class="metric-val">1,321-23,614</div><div class="metric-sub">graph intersections</div></div>
+      <div class="metric"><div class="metric-label">Rows used</div><div class="metric-val">66</div><div class="metric-sub">successful algorithm-city runs</div></div>
+    </div>
+
+    <div class="formula-box">
+      <strong>Primary source table</strong><br>
+      <code>city_network_experiment_results.csv</code> provides the attribute and performance rows used in the comparison.<br><br>
+      <strong>Supplemental source table</strong><br>
+      <code>all_city_algorithm_results.csv</code> is loaded as the paired route-results file you provided and used for source completeness reporting.<br><br>
+      <strong>Average degree</strong><br>
+      <code>k_avg = 2*|E| / |V|</code><br><br>
+      <strong>Directed within-algorithm comparison formula</strong><br>
+      <code>Pearson_r = CORREL(FILTER(outcome_range, algorithm=alg), FILTER(attribute_range, algorithm=alg))</code><br><br>
+      <strong>Recommended regression form for size effects</strong><br>
+      <code>LN(outcome) ~ attribute + algorithm_dummies</code><br><br>
+      <strong>Important caveat</strong><br>
+      <code>Node count, edge count, and intersection count are highly collinear in this dataset</code><br>
+      <code>r(nodes, edges) = 0.997, r(nodes, intersections) = 0.996</code>
+    </div>
+
+    <div class="section-title">Runtime Correlations (Pearson r)</div><div class="table-wrap"><table class="corr-table"><thead><tr><th>Algorithm</th><th>n</th><th>Node Count</th><th>Edge Count</th><th>Average Degree</th><th>Circuity Avg</th><th>Intersection Count</th></tr></thead><tbody><tr><th>Dijkstra</th><td>20</td><td>0.985</td><td>0.987</td><td>-0.212</td><td>-0.144</td><td>0.989</td></tr><tr><th>A*</th><td>20</td><td>0.045</td><td>0.075</td><td>0.461</td><td>-0.486</td><td>0.090</td></tr><tr><th>Bellman-Ford</th><td>20</td><td>0.950</td><td>0.958</td><td>-0.152</td><td>-0.073</td><td>0.959</td></tr><tr><th>ACO</th><td>6</td><td>-0.395</td><td>-0.403</td><td>0.103</td><td>0.285</td><td>-0.432</td></tr></tbody></table></div>
+    <div class="section-title">Memory Correlations (Pearson r)</div><div class="table-wrap"><table class="corr-table"><thead><tr><th>Algorithm</th><th>n</th><th>Node Count</th><th>Edge Count</th><th>Average Degree</th><th>Circuity Avg</th><th>Intersection Count</th></tr></thead><tbody><tr><th>Dijkstra</th><td>20</td><td>0.939</td><td>0.951</td><td>-0.139</td><td>-0.141</td><td>0.947</td></tr><tr><th>A*</th><td>20</td><td>0.939</td><td>0.955</td><td>-0.093</td><td>-0.104</td><td>0.947</td></tr><tr><th>Bellman-Ford</th><td>20</td><td>0.992</td><td>0.998</td><td>-0.193</td><td>-0.103</td><td>0.996</td></tr><tr><th>ACO</th><td>6</td><td>0.939</td><td>0.943</td><td>-0.194</td><td>-0.596</td><td>0.953</td></tr></tbody></table></div>
+
+    <p class="note">Use the runtime and memory tabs for the visual comparison, and use these tables when you need the exact within-algorithm direction and strength of each attribute relationship. ACO coefficients are much less stable because only 6 runs succeeded.</p>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script>
+const RAW=[{"city":"Cookeville, Tennessee, USA","algorithm":"Dijkstra","runtime":0.034624,"memory":0.325638,"graph_nodes":1759,"graph_edges":4641,"avg_degree":5.276862,"circuity":1.078605,"intersections":1353},{"city":"Cookeville, Tennessee, USA","algorithm":"A*","runtime":0.014275,"memory":0.267578,"graph_nodes":1759,"graph_edges":4641,"avg_degree":5.276862,"circuity":1.078605,"intersections":1353},{"city":"Cookeville, Tennessee, USA","algorithm":"Bellman-Ford","runtime":0.186244,"memory":1.016537,"graph_nodes":1759,"graph_edges":4641,"avg_degree":5.276862,"circuity":1.078605,"intersections":1353},{"city":"Cookeville, Tennessee, USA","algorithm":"ACO","runtime":299.477641,"memory":7.255857,"graph_nodes":1759,"graph_edges":4641,"avg_degree":5.276862,"circuity":1.078605,"intersections":1353},{"city":"Lebanon, Tennessee, USA","algorithm":"Dijkstra","runtime":0.033156,"memory":0.325378,"graph_nodes":1929,"graph_edges":4792,"avg_degree":4.968377,"circuity":1.067048,"intersections":1321},{"city":"Lebanon, Tennessee, USA","algorithm":"A*","runtime":0.009973,"memory":0.266136,"graph_nodes":1929,"graph_edges":4792,"avg_degree":4.968377,"circuity":1.067048,"intersections":1321},{"city":"Lebanon, Tennessee, USA","algorithm":"Bellman-Ford","runtime":0.170051,"memory":1.034077,"graph_nodes":1929,"graph_edges":4792,"avg_degree":4.968377,"circuity":1.067048,"intersections":1321},{"city":"Murfreesboro, Tennessee, USA","algorithm":"Dijkstra","runtime":0.119343,"memory":1.3032,"graph_nodes":6136,"graph_edges":15039,"avg_degree":4.90189,"circuity":1.066529,"intersections":4268},{"city":"Murfreesboro, Tennessee, USA","algorithm":"A*","runtime":0.052032,"memory":1.067741,"graph_nodes":6136,"graph_edges":15039,"avg_degree":4.90189,"circuity":1.066529,"intersections":4268},{"city":"Murfreesboro, Tennessee, USA","algorithm":"Bellman-Ford","runtime":0.532848,"memory":4.159077,"graph_nodes":6136,"graph_edges":15039,"avg_degree":4.90189,"circuity":1.066529,"intersections":4268},{"city":"Murfreesboro, Tennessee, USA","algorithm":"ACO","runtime":285.08369,"memory":17.298546,"graph_nodes":6136,"graph_edges":15039,"avg_degree":4.90189,"circuity":1.066529,"intersections":4268},{"city":"Chattanooga, Tennessee, USA","algorithm":"Dijkstra","runtime":0.200632,"memory":1.315804,"graph_nodes":9554,"graph_edges":24889,"avg_degree":5.210174,"circuity":1.082451,"intersections":7220},{"city":"Chattanooga, Tennessee, USA","algorithm":"A*","runtime":0.067553,"memory":1.0914,"graph_nodes":9554,"graph_edges":24889,"avg_degree":5.210174,"circuity":1.082451,"intersections":7220},{"city":"Chattanooga, Tennessee, USA","algorithm":"Bellman-Ford","runtime":1.410052,"memory":6.753399,"graph_nodes":9554,"graph_edges":24889,"avg_degree":5.210174,"circuity":1.082451,"intersections":7220},{"city":"Knoxville, Tennessee, USA","algorithm":"Dijkstra","runtime":0.175992,"memory":1.306519,"graph_nodes":9391,"graph_edges":23597,"avg_degree":5.02545,"circuity":1.064503,"intersections":7271},{"city":"Knoxville, Tennessee, USA","algorithm":"A*","runtime":0.135657,"memory":1.179703,"graph_nodes":9391,"graph_edges":23597,"avg_degree":5.02545,"circuity":1.064503,"intersections":7271},{"city":"Knoxville, Tennessee, USA","algorithm":"Bellman-Ford","runtime":1.035438,"memory":6.589314,"graph_nodes":9391,"graph_edges":23597,"avg_degree":5.02545,"circuity":1.064503,"intersections":7271},{"city":"Knoxville, Tennessee, USA","algorithm":"ACO","runtime":99.105445,"memory":35.530144,"graph_nodes":9391,"graph_edges":23597,"avg_degree":5.02545,"circuity":1.064503,"intersections":7271},{"city":"Memphis, Tennessee, USA","algorithm":"Dijkstra","runtime":0.469082,"memory":5.458389,"graph_nodes":23790,"graph_edges":62208,"avg_degree":5.22976,"circuity":1.077896,"intersections":18205},{"city":"Memphis, Tennessee, USA","algorithm":"A*","runtime":0.045841,"memory":4.313148,"graph_nodes":23790,"graph_edges":62208,"avg_degree":5.22976,"circuity":1.077896,"intersections":18205},{"city":"Memphis, Tennessee, USA","algorithm":"Bellman-Ford","runtime":6.620083,"memory":17.514156,"graph_nodes":23790,"graph_edges":62208,"avg_degree":5.22976,"circuity":1.077896,"intersections":18205},{"city":"Nashville, Tennessee, USA","algorithm":"Dijkstra","runtime":0.414122,"memory":5.454948,"graph_nodes":22543,"graph_edges":55981,"avg_degree":4.966597,"circuity":1.06232,"intersections":16057},{"city":"Nashville, Tennessee, USA","algorithm":"A*","runtime":0.036808,"memory":4.313148,"graph_nodes":22543,"graph_edges":55981,"avg_degree":4.966597,"circuity":1.06232,"intersections":16057},{"city":"Nashville, Tennessee, USA","algorithm":"Bellman-Ford","runtime":3.35645,"memory":16.327793,"graph_nodes":22543,"graph_edges":55981,"avg_degree":4.966597,"circuity":1.06232,"intersections":16057},{"city":"Johnson City, Tennessee, USA","algorithm":"Dijkstra","runtime":0.080924,"memory":0.492699,"graph_nodes":3826,"graph_edges":9210,"avg_degree":4.814428,"circuity":1.082519,"intersections":2681},{"city":"Johnson City, Tennessee, USA","algorithm":"A*","runtime":0.032044,"memory":0.508873,"graph_nodes":3826,"graph_edges":9210,"avg_degree":4.814428,"circuity":1.082519,"intersections":2681},{"city":"Johnson City, Tennessee, USA","algorithm":"Bellman-Ford","runtime":0.488911,"memory":2.325954,"graph_nodes":3826,"graph_edges":9210,"avg_degree":4.814428,"circuity":1.082519,"intersections":2681},{"city":"Johnson City, Tennessee, USA","algorithm":"ACO","runtime":231.67544,"memory":13.671005,"graph_nodes":3826,"graph_edges":9210,"avg_degree":4.814428,"circuity":1.082519,"intersections":2681},{"city":"Jackson, Tennessee, USA","algorithm":"Dijkstra","runtime":0.061739,"memory":0.484398,"graph_nodes":3572,"graph_edges":8769,"avg_degree":4.909854,"circuity":1.070504,"intersections":2465},{"city":"Jackson, Tennessee, USA","algorithm":"A*","runtime":0.00972,"memory":0.492851,"graph_nodes":3572,"graph_edges":8769,"avg_degree":4.909854,"circuity":1.070504,"intersections":2465},{"city":"Jackson, Tennessee, USA","algorithm":"Bellman-Ford","runtime":0.514534,"memory":2.251148,"graph_nodes":3572,"graph_edges":8769,"avg_degree":4.909854,"circuity":1.070504,"intersections":2465},{"city":"Clarksville, Tennessee, USA","algorithm":"Dijkstra","runtime":0.107343,"memory":1.302826,"graph_nodes":6206,"graph_edges":15532,"avg_degree":5.005479,"circuity":1.073705,"intersections":4314},{"city":"Clarksville, Tennessee, USA","algorithm":"A*","runtime":0.01681,"memory":0.985023,"graph_nodes":6206,"graph_edges":15532,"avg_degree":5.005479,"circuity":1.073705,"intersections":4314},{"city":"Clarksville, Tennessee, USA","algorithm":"Bellman-Ford","runtime":0.998788,"memory":4.272663,"graph_nodes":6206,"graph_edges":15532,"avg_degree":5.005479,"circuity":1.073705,"intersections":4314},{"city":"Charlotte, North Carolina, USA","algorithm":"Dijkstra","runtime":0.584323,"memory":5.461449,"graph_nodes":34582,"graph_edges":80194,"avg_degree":4.637904,"circuity":1.06671,"intersections":23614},{"city":"Charlotte, North Carolina, USA","algorithm":"A*","runtime":0.042573,"memory":4.313148,"graph_nodes":34582,"graph_edges":80194,"avg_degree":4.637904,"circuity":1.06671,"intersections":23614},{"city":"Charlotte, North Carolina, USA","algorithm":"Bellman-Ford","runtime":6.710055,"memory":21.382137,"graph_nodes":34582,"graph_edges":80194,"avg_degree":4.637904,"circuity":1.06671,"intersections":23614},{"city":"Raleigh, North Carolina, USA","algorithm":"Dijkstra","runtime":0.313381,"memory":1.996864,"graph_nodes":16480,"graph_edges":39181,"avg_degree":4.754976,"circuity":1.081781,"intersections":11291},{"city":"Raleigh, North Carolina, USA","algorithm":"A*","runtime":0.078093,"memory":1.969414,"graph_nodes":16480,"graph_edges":39181,"avg_degree":4.754976,"circuity":1.081781,"intersections":11291},{"city":"Raleigh, North Carolina, USA","algorithm":"Bellman-Ford","runtime":3.062687,"memory":10.30254,"graph_nodes":16480,"graph_edges":39181,"avg_degree":4.754976,"circuity":1.081781,"intersections":11291},{"city":"Greensboro, North Carolina, USA","algorithm":"Dijkstra","runtime":0.200371,"memory":1.308975,"graph_nodes":10899,"graph_edges":27087,"avg_degree":4.970548,"circuity":1.060172,"intersections":8136},{"city":"Greensboro, North Carolina, USA","algorithm":"A*","runtime":0.146636,"memory":1.213196,"graph_nodes":10899,"graph_edges":27087,"avg_degree":4.970548,"circuity":1.060172,"intersections":8136},{"city":"Greensboro, North Carolina, USA","algorithm":"Bellman-Ford","runtime":1.391412,"memory":7.274853,"graph_nodes":10899,"graph_edges":27087,"avg_degree":4.970548,"circuity":1.060172,"intersections":8136},{"city":"Greensboro, North Carolina, USA","algorithm":"ACO","runtime":293.679048,"memory":28.994675,"graph_nodes":10899,"graph_edges":27087,"avg_degree":4.970548,"circuity":1.060172,"intersections":8136},{"city":"Asheville, North Carolina, USA","algorithm":"Dijkstra","runtime":0.067687,"memory":0.494286,"graph_nodes":3902,"graph_edges":9644,"avg_degree":4.943106,"circuity":1.110443,"intersections":2760},{"city":"Asheville, North Carolina, USA","algorithm":"A*","runtime":0.064626,"memory":0.662445,"graph_nodes":3902,"graph_edges":9644,"avg_degree":4.943106,"circuity":1.110443,"intersections":2760},{"city":"Asheville, North Carolina, USA","algorithm":"Bellman-Ford","runtime":0.329717,"memory":2.521694,"graph_nodes":3902,"graph_edges":9644,"avg_degree":4.943106,"circuity":1.110443,"intersections":2760},{"city":"Asheville, North Carolina, USA","algorithm":"ACO","runtime":288.301364,"memory":13.569611,"graph_nodes":3902,"graph_edges":9644,"avg_degree":4.943106,"circuity":1.110443,"intersections":2760},{"city":"Atlanta, Georgia, USA","algorithm":"Dijkstra","runtime":0.233132,"memory":1.915253,"graph_nodes":12919,"graph_edges":33701,"avg_degree":5.217277,"circuity":1.058928,"intersections":10170},{"city":"Atlanta, Georgia, USA","algorithm":"A*","runtime":0.069879,"memory":1.969414,"graph_nodes":12919,"graph_edges":33701,"avg_degree":5.217277,"circuity":1.058928,"intersections":10170},{"city":"Atlanta, Georgia, USA","algorithm":"Bellman-Ford","runtime":2.57111,"memory":9.157185,"graph_nodes":12919,"graph_edges":33701,"avg_degree":5.217277,"circuity":1.058928,"intersections":10170},{"city":"Savannah, Georgia, USA","algorithm":"Dijkstra","runtime":0.117479,"memory":1.302055,"graph_nodes":6094,"graph_edges":16294,"avg_degree":5.347555,"circuity":1.06308,"intersections":4979},{"city":"Savannah, Georgia, USA","algorithm":"A*","runtime":0.097129,"memory":1.110344,"graph_nodes":6094,"graph_edges":16294,"avg_degree":5.347555,"circuity":1.06308,"intersections":4979},{"city":"Savannah, Georgia, USA","algorithm":"Bellman-Ford","runtime":1.277056,"memory":4.313259,"graph_nodes":6094,"graph_edges":16294,"avg_degree":5.347555,"circuity":1.06308,"intersections":4979},{"city":"Birmingham, Alabama, USA","algorithm":"Dijkstra","runtime":0.218005,"memory":1.874039,"graph_nodes":11170,"graph_edges":30803,"avg_degree":5.515309,"circuity":1.046027,"intersections":8963},{"city":"Birmingham, Alabama, USA","algorithm":"A*","runtime":0.199587,"memory":2.552834,"graph_nodes":11170,"graph_edges":30803,"avg_degree":5.515309,"circuity":1.046027,"intersections":8963},{"city":"Birmingham, Alabama, USA","algorithm":"Bellman-Ford","runtime":1.725924,"memory":8.564716,"graph_nodes":11170,"graph_edges":30803,"avg_degree":5.515309,"circuity":1.046027,"intersections":8963},{"city":"Huntsville, Alabama, USA","algorithm":"Dijkstra","runtime":0.15169,"memory":1.30397,"graph_nodes":9323,"graph_edges":23274,"avg_degree":4.992813,"circuity":1.083969,"intersections":7133},{"city":"Huntsville, Alabama, USA","algorithm":"A*","runtime":0.043334,"memory":1.077591,"graph_nodes":9323,"graph_edges":23274,"avg_degree":4.992813,"circuity":1.083969,"intersections":7133},{"city":"Huntsville, Alabama, USA","algorithm":"Bellman-Ford","runtime":1.09916,"memory":6.392925,"graph_nodes":9323,"graph_edges":23274,"avg_degree":4.992813,"circuity":1.083969,"intersections":7133},{"city":"Louisville, Kentucky, USA","algorithm":"Dijkstra","runtime":0.305866,"memory":3.385124,"graph_nodes":22275,"graph_edges":54704,"avg_degree":4.911695,"circuity":1.092848,"intersections":15388},{"city":"Louisville, Kentucky, USA","algorithm":"A*","runtime":0.039048,"memory":4.313148,"graph_nodes":22275,"graph_edges":54704,"avg_degree":4.911695,"circuity":1.092848,"intersections":15388},{"city":"Louisville, Kentucky, USA","algorithm":"Bellman-Ford","runtime":3.828471,"memory":16.018108,"graph_nodes":22275,"graph_edges":54704,"avg_degree":4.911695,"circuity":1.092848,"intersections":15388},{"city":"Lexington, Kentucky, USA","algorithm":"Dijkstra","runtime":0.211783,"memory":1.894753,"graph_nodes":11863,"graph_edges":28696,"avg_degree":4.837899,"circuity":1.088452,"intersections":8328},{"city":"Lexington, Kentucky, USA","algorithm":"A*","runtime":0.016442,"memory":1.969414,"graph_nodes":11863,"graph_edges":28696,"avg_degree":4.837899,"circuity":1.088452,"intersections":8328},{"city":"Lexington, Kentucky, USA","algorithm":"Bellman-Ford","runtime":1.538925,"memory":8.07613,"graph_nodes":11863,"graph_edges":28696,"avg_degree":4.837899,"circuity":1.088452,"intersections":8328}];
+const STATS={"city_count":"20","successful_runs":"66","aco_runs":"6","city_csv_rows":"80","all_results_rows":"87","node_range":"1,759-34,582","edge_range":"4,641-80,194","degree_range":"4.638-5.515","circuity_range":"1.046-1.110","intersection_range":"1,321-23,614","runtime_corr_nodes_dijkstra":"0.985","memory_corr_nodes_dijkstra":"0.939","node_edge_corr":"0.997","node_intersection_corr":"0.996","strongest_memory_size_proxy":"Edge Count"};
+const ALGS=['Dijkstra','A*','Bellman-Ford','ACO'];
+const COLORS={'Dijkstra':'#3266ad','A*':'#2a9d6f','Bellman-Ford':'#c05c28','ACO':'#8b4fbf'};
+const ATTR_META={
+  graph_nodes:{label:'Node Count', xType:'logarithmic'},
+  graph_edges:{label:'Edge Count', xType:'logarithmic'},
+  avg_degree:{label:'Average Degree', xType:'linear'},
+  circuity:{label:'Circuity Avg', xType:'linear'},
+  intersections:{label:'Intersection Count', xType:'logarithmic'}
+};
+
+function defOpts(){
+  return {
+    responsive:true,
+    maintainAspectRatio:false,
+    plugins:{legend:{display:false}},
+    elements:{point:{radius:4,hoverRadius:5}}
+  };
+}
+
+function makeDatasets(xField, yField){
+  return ALGS.map(alg => ({
+    label:alg,
+    data:RAW.filter(r => r.algorithm === alg).map(r => ({x:r[xField], y:r[yField], city:r.city})),
+    backgroundColor:COLORS[alg] + 'aa',
+    borderColor:COLORS[alg],
+    pointStyle:alg === 'ACO' ? 'triangle' : 'circle'
+  }));
+}
+
+function axisTick(kind){
+  if (kind === 'runtime') return v => v >= 1 ? v.toFixed(0) + 's' : v.toFixed(2) + 's';
+  if (kind === 'memory') return v => v.toFixed(1) + ' MB';
+  return v => Number(v).toLocaleString();
+}
+
+function makeScatter(id, xField, yField, yKind){
+  const meta = ATTR_META[xField];
+  const yLog = yKind === 'runtime';
+  return new Chart(document.getElementById(id), {
+    type:'scatter',
+    data:{datasets:makeDatasets(xField, yField)},
+    options:{
+      ...defOpts(),
+      scales:{
+        x:{
+          type:meta.xType,
+          ticks:{
+            font:{size:10},
+            callback:v => meta.xType === 'linear' ? Number(v).toFixed(3).replace(/\.000$/,'') : Number(v).toLocaleString()
+          },
+          title:{display:true,text:meta.label,font:{size:11}},
+          grid:{color:'rgba(128,128,128,0.08)'}
+        },
+        y:{
+          type:yLog ? 'logarithmic' : 'linear',
+          ticks:{font:{size:10},callback:axisTick(yKind)},
+          title:{display:true,text:yKind === 'runtime' ? 'Runtime (s)' : 'Memory (MB)',font:{size:11}},
+          grid:{color:'rgba(128,128,128,0.08)'}
+        }
+      }
+    }
+  });
+}
+
+let runtimeCharts = false;
+let memoryCharts = false;
+
+function initRuntime(){
+  if (runtimeCharts) return;
+  makeScatter('rtNodes','graph_nodes','runtime','runtime');
+  makeScatter('rtEdges','graph_edges','runtime','runtime');
+  makeScatter('rtDegree','avg_degree','runtime','runtime');
+  makeScatter('rtCircuity','circuity','runtime','runtime');
+  makeScatter('rtIntersections','intersections','runtime','runtime');
+  runtimeCharts = true;
+}
+
+function initMemory(){
+  if (memoryCharts) return;
+  makeScatter('memNodes','graph_nodes','memory','memory');
+  makeScatter('memEdges','graph_edges','memory','memory');
+  makeScatter('memDegree','avg_degree','memory','memory');
+  makeScatter('memCircuity','circuity','memory','memory');
+  makeScatter('memIntersections','intersections','memory','memory');
+  memoryCharts = true;
+}
+
+function setTab(tab){
+  document.querySelectorAll('.tab').forEach(el => {
+    const text = el.textContent.toLowerCase();
+    el.classList.toggle('active', text.includes(tab));
+  });
+  ['runtime','memory','summary'].forEach(name => {
+    const el = document.getElementById('pane-' + name);
+    if (el) el.style.display = name === tab ? '' : 'none';
+  });
+  if (tab === 'runtime') initRuntime();
+  if (tab === 'memory') initMemory();
+}
+
+setTimeout(initRuntime, 100);
+</script>
+</body>
+</html>
